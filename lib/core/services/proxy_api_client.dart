@@ -202,7 +202,7 @@ class ProxyApiClient {
       }
 
       final response = await _dio.post(
-        '/start-external-browser-login',
+        '/auth/start-external-browser-login',
         data: {'username': username},
       );
 
@@ -238,7 +238,7 @@ class ProxyApiClient {
         );
       }
 
-      final response = await _dio.get('/check-login-status/$sessionId');
+      final response = await _dio.get('/auth/check-login-status/$sessionId');
 
       return _handleResponse<Map<String, dynamic>>(response, null);
     } on DioException catch (dioError) {
@@ -269,7 +269,7 @@ class ProxyApiClient {
       }
 
       final response = await _dio.post(
-        '/complete-external-browser-login',
+        '/auth/complete-external-browser-login',
         data: {'sessionId': sessionId},
       );
 
