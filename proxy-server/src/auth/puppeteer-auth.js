@@ -13,40 +13,43 @@ async function launchManualLoginBrowser(userId) {
   logger.info('Launching manual login browser for user: %s', userId);
   
   try {
-    // Try different browser launch configurations
-    let browser;
-    try {
-      // First try with bundled Chromium
-      browser = await puppeteer.launch({
-        headless: false,
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-gpu',
-          '--no-first-run',
-          '--disable-blink-features=AutomationControlled'
-        ],
-        defaultViewport: null,
-      });
-    } catch (error) {
-      logger.warn('Failed to launch bundled Chromium, trying system Chrome: %s', error.message);
-      
-      // Fallback to system Chrome
-      browser = await puppeteer.launch({
-        headless: false,
-        executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-gpu',
-          '--no-first-run',
-          '--disable-blink-features=AutomationControlled'
-        ],
-        defaultViewport: null,
-      });
-    }
+    // Launch browser with headless mode for VPS server-side operation
+    // This ensures the browser runs only on the proxy server
+    const browser = await puppeteer.launch({
+      headless: true, // Run headless on VPS server
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--no-first-run',
+        '--disable-blink-features=AutomationControlled',
+        '--disable-web-security',
+        '--disable-features=VizDisplayCompositor',
+        '--remote-debugging-port=0', // Use random port
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding',
+        '--disable-extensions',
+        '--disable-plugins',
+        '--memory-pressure-off',
+        '--max_old_space_size=4096', // Increase memory limit
+        '--single-process', // Use single process for VPS
+        '--disable-background-networking',
+        '--disable-default-apps',
+        '--disable-sync',
+        '--disable-translate',
+        '--hide-scrollbars',
+        '--metrics-recording-only',
+        '--mute-audio',
+        '--no-default-browser-check',
+        '--no-pings',
+        '--password-store=basic',
+        '--use-mock-keychain'
+      ],
+      defaultViewport: { width: 1280, height: 720 },
+      timeout: 60000, // Increase timeout for VPS
+    });
     
     const page = await browser.newPage();
     
@@ -56,7 +59,7 @@ async function launchManualLoginBrowser(userId) {
     // Navigate to K-LMS login page
     await page.goto(`${CANVAS_BASE_URL}/login`, { 
       waitUntil: 'networkidle2',
-      timeout: 30000 
+      timeout: 60000 // Increase timeout for VPS
     });
     
     logger.info('Browser launched for manual login. User should log in manually.');

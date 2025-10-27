@@ -25,7 +25,7 @@ const corsOptions = {
     // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
     
-    const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:*'];
+    const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:*', 'https://localhost:*', 'http://127.0.0.1:*', 'https://127.0.0.1:*'];
     const isAllowed = allowedOrigins.some(allowedOrigin => {
       if (allowedOrigin.includes('*')) {
         const pattern = allowedOrigin.replace(/\*/g, '.*');

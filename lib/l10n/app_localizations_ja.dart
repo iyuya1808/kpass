@@ -117,13 +117,15 @@ class AppLocalizationsJa extends AppLocalizations {
   String get calendarPermission => 'カレンダーの許可';
 
   @override
-  String get calendarPermissionMessage => 'KPassは課題の締切をカレンダーに同期するためにカレンダーへのアクセスが必要です';
+  String get calendarPermissionMessage =>
+      'KPassは課題の締切をカレンダーに同期するためにカレンダーへのアクセスが必要です';
 
   @override
   String get notificationPermission => '通知の許可';
 
   @override
-  String get notificationPermissionMessage => 'KPassは締切のリマインダーを送信するために通知へのアクセスが必要です';
+  String get notificationPermissionMessage =>
+      'KPassは締切のリマインダーを送信するために通知へのアクセスが必要です';
 
   @override
   String get grant => '許可';
@@ -276,7 +278,8 @@ class AppLocalizationsJa extends AppLocalizations {
   String get enterCanvasToken => 'Canvasアクセストークンを入力';
 
   @override
-  String get tokenDescription => 'Canvasのアカウント設定からアクセストークンを生成できます。トークンは安全にデバイスに保存されます。';
+  String get tokenDescription =>
+      'Canvasのアカウント設定からアクセストークンを生成できます。トークンは安全にデバイスに保存されます。';
 
   @override
   String get accessToken => 'アクセストークン';
@@ -380,10 +383,12 @@ class AppLocalizationsJa extends AppLocalizations {
   String get notificationsDisabled => 'Notifications Disabled';
 
   @override
-  String get notificationPermissionGranted => 'You will receive assignment reminders';
+  String get notificationPermissionGranted =>
+      'You will receive assignment reminders';
 
   @override
-  String get notificationPermissionDenied => 'Grant permission to receive notifications';
+  String get notificationPermissionDenied =>
+      'Grant permission to receive notifications';
 
   @override
   String get pushNotifications => 'Push Notifications';
@@ -404,19 +409,22 @@ class AppLocalizationsJa extends AppLocalizations {
   String get assignmentReminders => 'Assignment Reminders';
 
   @override
-  String get assignmentRemindersSubtitle => 'Get reminded before assignment deadlines';
+  String get assignmentRemindersSubtitle =>
+      'Get reminded before assignment deadlines';
 
   @override
   String get newAssignmentNotifications => 'New Assignment Notifications';
 
   @override
-  String get newAssignmentNotificationsSubtitle => 'Get notified when new assignments are posted';
+  String get newAssignmentNotificationsSubtitle =>
+      'Get notified when new assignments are posted';
 
   @override
   String get assignmentUpdateNotifications => 'Assignment Update Notifications';
 
   @override
-  String get assignmentUpdateNotificationsSubtitle => 'Get notified when assignments are modified';
+  String get assignmentUpdateNotificationsSubtitle =>
+      'Get notified when assignments are modified';
 
   @override
   String get sound => 'Sound';
@@ -434,7 +442,8 @@ class AppLocalizationsJa extends AppLocalizations {
   String get reminderTiming => 'Reminder Timing';
 
   @override
-  String get reminderTimingSubtitle => 'Choose when to receive assignment reminders before the due date';
+  String get reminderTimingSubtitle =>
+      'Choose when to receive assignment reminders before the due date';
 
   @override
   String get fifteenMinutes => '15 minutes';
@@ -455,7 +464,8 @@ class AppLocalizationsJa extends AppLocalizations {
   String get quietHours => 'Quiet Hours';
 
   @override
-  String get quietHoursSubtitle => 'Set hours when you don\'t want to receive notifications';
+  String get quietHoursSubtitle =>
+      'Set hours when you don\'t want to receive notifications';
 
   @override
   String get startTime => 'Start Time';
@@ -476,7 +486,8 @@ class AppLocalizationsJa extends AppLocalizations {
   String get courseNotifications => 'Course Notifications';
 
   @override
-  String get courseNotificationsSubtitle => 'Choose which courses to receive notifications for';
+  String get courseNotificationsSubtitle =>
+      'Choose which courses to receive notifications for';
 
   @override
   String get noCoursesFound => 'No courses found';
@@ -512,10 +523,12 @@ class AppLocalizationsJa extends AppLocalizations {
   String get serviceStatus => 'Service Status';
 
   @override
-  String get notificationServiceAvailable => 'Notification service is available';
+  String get notificationServiceAvailable =>
+      'Notification service is available';
 
   @override
-  String get notificationServiceUnavailable => 'Notification service is not available';
+  String get notificationServiceUnavailable =>
+      'Notification service is not available';
 
   @override
   String get refreshPushToken => 'Refresh Push Token';
@@ -557,7 +570,8 @@ class AppLocalizationsJa extends AppLocalizations {
   String get clearAllNotifications => 'Clear All Notifications';
 
   @override
-  String get clearAllNotificationsMessage => 'This will permanently delete all notification history. This action cannot be undone.';
+  String get clearAllNotificationsMessage =>
+      'This will permanently delete all notification history. This action cannot be undone.';
 
   @override
   String get noNotificationsYet => 'No notifications yet';

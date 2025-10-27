@@ -2,6 +2,24 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "name": "Flutter (Debug Mode - ゆ)",
+      "type": "dart",
+      "request": "launch",
+      "program": "lib/main.dart",
+      "args": [],
+      "flutterMode": "debug",
+      "deviceId": "00008140-000649CC3A33001C"
+    },
+    {
+      "name": "Flutter (Release Mode - ゆ)",
+      "type": "dart",
+      "request": "launch",
+      "program": "lib/main.dart",
+      "args": [],
+      "flutterMode": "release",
+      "deviceId": "00008140-000649CC3A33001C"
+    },
+    {
       "name": "Flutter (Debug Mode - iPhone 16e)",
       "type": "dart",
       "request": "launch",

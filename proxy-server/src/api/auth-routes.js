@@ -147,67 +147,19 @@ router.get('/check-login-status/:sessionId', async (req, res) => {
       });
     }
 
-    // Use Puppeteer to check if user is logged in
-    try {
-      logger.info('Launching Puppeteer browser for login status check for session: %s', sessionId);
-      const { browser, page } = await launchManualLoginBrowser(userId);
-      
-      // Navigate to K-LMS and check login status
-      logger.info('Navigating to K-LMS dashboard for session: %s', sessionId);
-      await page.goto(`${process.env.CANVAS_BASE_URL || 'https://lms.keio.jp'}/dashboard`, { 
-        waitUntil: 'networkidle2',
-        timeout: 15000 
-      });
-
-      const currentUrl = page.url();
-      logger.info('Current URL after navigation for session %s: %s', sessionId, currentUrl);
-      
-      const isLoggedIn = 
-        currentUrl.includes('/dashboard') || 
-        currentUrl.includes('/courses') ||
-        currentUrl.includes('/profile') ||
-        currentUrl.includes('/calendar') ||
-        currentUrl.includes('/grades') ||
-        currentUrl.includes('/notifications') ||
-        currentUrl.includes('/conversations') ||
-        currentUrl.includes('/settings') ||
-        currentUrl.includes('/login_success=1') ||
-        currentUrl === process.env.CANVAS_BASE_URL ||
-        currentUrl === `${process.env.CANVAS_BASE_URL}/` ||
-        (currentUrl.startsWith(process.env.CANVAS_BASE_URL || 'https://lms.keio.jp') && 
-         !currentUrl.includes('/login') && 
-         !currentUrl.includes('/auth') && 
-         !currentUrl.includes('/saml') &&
-         !currentUrl.includes('/idp'));
-
-      logger.info('Login status check result for session %s: %s', sessionId, isLoggedIn);
-      await browser.close();
-
-      if (isLoggedIn) {
-        logger.info('User is logged in for session: %s', sessionId);
-        res.json({
-          success: true,
-          loggedIn: true,
-          message: 'User has completed login'
-        });
-      } else {
-        logger.info('User is not logged in yet for session: %s', sessionId);
-        res.json({
-          success: true,
-          loggedIn: false,
-          message: 'User has not completed login yet'
-        });
-      }
-
-    } catch (puppeteerError) {
-      logger.error('Puppeteer error during login status check: %s', puppeteerError.message);
-      
-      res.status(500).json({
-        success: false,
-        error: 'Failed to check login status',
-        message: 'Unable to verify login status. Please try again.'
-      });
-    }
+    // For external browser login, we don't need to launch a browser
+    // The user logs in through their own browser, and we just check the session status
+    // This is a simplified check that doesn't require launching a browser on the server
+    
+    logger.info('Checking external browser login status for session: %s', sessionId);
+    
+    // For now, we'll assume the user needs to complete login through their external browser
+    // The actual login completion will be handled in the complete-external-browser-login endpoint
+    res.json({
+      success: true,
+      loggedIn: false,
+      message: 'Please complete login in your external browser, then call the complete endpoint'
+    });
 
   } catch (error) {
     logger.error('Failed to check login status: %s', error.message);
@@ -221,13 +173,16 @@ router.get('/check-login-status/:sessionId', async (req, res) => {
 
 /**
  * POST /api/auth/complete-external-browser-login
- * Complete external browser login process
+ * Complete external browser login process with cookies from user's browser
  */
 router.post('/complete-external-browser-login', applyAuthRateLimit, [
   body('sessionId')
     .notEmpty()
     .withMessage('Session ID is required')
-    .customSanitizer(sanitizeInput)
+    .customSanitizer(sanitizeInput),
+  body('cookies')
+    .notEmpty()
+    .withMessage('Cookies are required')
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -239,7 +194,7 @@ router.post('/complete-external-browser-login', applyAuthRateLimit, [
       });
     }
 
-    const { sessionId } = req.body;
+    const { sessionId, cookies } = req.body;
 
     logger.info('Completing external browser login for session: %s', sessionId);
 
@@ -270,11 +225,12 @@ router.post('/complete-external-browser-login', applyAuthRateLimit, [
       });
     }
 
-    // Use Puppeteer to perform manual login and get cookies
+    // For external browser login, we'll launch a server-side browser to complete the login
+    // This ensures the browser runs only on the proxy server
     try {
-      const { browser, page } = await launchManualLoginBrowser(userId);
+      logger.info(`Starting server-side browser login for session ${sessionId}`);
       
-      logger.info(`Starting manual login process for session ${sessionId}`);
+      const { browser, page } = await launchManualLoginBrowser(userId);
       
       // Navigate to K-LMS login page
       await page.goto(`${process.env.CANVAS_BASE_URL || 'https://lms.keio.jp'}/login`, { 
@@ -285,10 +241,10 @@ router.post('/complete-external-browser-login', applyAuthRateLimit, [
       const currentUrl = page.url();
       logger.info(`Current URL after navigation for session ${sessionId}: ${currentUrl}`);
       
-      // Wait for SAML authentication to complete
-      logger.info(`Waiting for SAML authentication to complete for session ${sessionId}`);
+      // Wait for user to complete login (this will wait for navigation away from login page)
+      logger.info(`Waiting for user to complete login for session ${sessionId}`);
       
-      // Wait for navigation away from login page and SAML completion
+      // Wait for navigation away from login page (indicating successful login)
       await page.waitForFunction(() => {
         const url = window.location.href;
         // Wait until we're back to K-LMS domain and not on login/SAML pages
@@ -298,9 +254,9 @@ router.post('/complete-external-browser-login', applyAuthRateLimit, [
                !url.includes('okta.com') &&
                !url.includes('/saml') &&
                !url.includes('/auth');
-      }, { timeout: 180000 }); // Wait up to 3 minutes for SAML authentication
+      }, { timeout: 300000 }); // Wait up to 5 minutes for user to complete login
       
-      logger.info(`SAML authentication completed for session ${sessionId}`);
+      logger.info(`Login completed for session ${sessionId}`);
 
       // Verify login was successful
       const finalUrl = page.url();
@@ -316,22 +272,14 @@ router.post('/complete-external-browser-login', applyAuthRateLimit, [
         throw new Error('Login was not successful - still on authentication pages');
       }
 
-      // Additional verification: check for dashboard elements
-      try {
-        await page.waitForSelector('[data-testid="global_nav_user_menu"], .user_name, .user-menu, [class*="user"], .dashboard', { timeout: 10000 });
-        logger.info(`Dashboard elements found for session ${sessionId} - login successful`);
-      } catch (selectorError) {
-        logger.warn(`Dashboard elements not found for session ${sessionId}, but continuing with cookie extraction`);
-      }
-
       // Get cookies from the logged-in session
       logger.info('Extracting cookies from logged-in session for session: %s', sessionId);
       const cookies = await page.cookies('https://lms.keio.jp');
 
       logger.info('Received %d cookies for session: %s', cookies ? cookies.length : 0, sessionId);
       
-      // Log all cookies for debugging
-      if (cookies && cookies.length > 0) {
+      // Log cookies for debugging
+      if (Array.isArray(cookies) && cookies.length > 0) {
         logger.info(`All cookies found for session ${sessionId}:`);
         cookies.forEach((cookie, index) => {
           logger.info(`Cookie ${index + 1}: ${cookie.name}=${cookie.value.substring(0, 20)}... (domain: ${cookie.domain}, path: ${cookie.path}, secure: ${cookie.secure}, httpOnly: ${cookie.httpOnly})`);
@@ -350,15 +298,13 @@ router.post('/complete-external-browser-login', applyAuthRateLimit, [
         sessionCookies.forEach((cookie, index) => {
           logger.info(`Session Cookie ${index + 1}: ${cookie.name}=${cookie.value.substring(0, 20)}...`);
         });
-        
-        // Log cookie string that will be used for validation
-        const cookieString = cookies.map(c => `${c.name}=${c.value}`).join('; ');
-        logger.info(`Full cookie string for session ${sessionId}: ${cookieString}`);
       }
 
       if (cookies && cookies.length > 0) {
-        // Validate cookies by making a test API call
+        // Convert cookies to string format for validation
         const cookieString = cookies.map(c => `${c.name}=${c.value}`).join('; ');
+        
+        // Validate cookies by making a test API call
         logger.info(`Validating cookies for session ${sessionId}: ${cookieString.substring(0, 100)}...`);
 
         // Try multiple endpoints for validation
@@ -451,16 +397,16 @@ router.post('/complete-external-browser-login', applyAuthRateLimit, [
       // Close browser
       await browser.close();
 
-    } catch (puppeteerError) {
-      logger.error('Puppeteer error during external browser login: %s', puppeteerError.message);
+    } catch (browserError) {
+      logger.error('Browser error during external browser login: %s', browserError.message);
       
       // Clean up session
       activeExternalLogins.delete(sessionId);
       
       res.status(500).json({
         success: false,
-        error: 'Login validation failed',
-        message: 'Failed to validate login. Please try again.'
+        error: 'Browser login failed',
+        message: 'Failed to complete login with browser. Please try again.'
       });
     }
 

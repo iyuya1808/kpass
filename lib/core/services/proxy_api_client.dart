@@ -257,9 +257,10 @@ class ProxyApiClient {
     }
   }
 
-  /// Complete external browser login process
+  /// Complete external browser login process with cookies
   Future<Result<Map<String, dynamic>>> completeExternalBrowserLogin(
     String sessionId,
+    List<Map<String, dynamic>> cookies,
   ) async {
     try {
       if (kDebugMode && EnvironmentConfig.enableLogging) {
@@ -270,7 +271,7 @@ class ProxyApiClient {
 
       final response = await _dio.post(
         '/auth/complete-external-browser-login',
-        data: {'sessionId': sessionId},
+        data: {'sessionId': sessionId, 'cookies': cookies},
       );
 
       return _handleResponse<Map<String, dynamic>>(response, null);

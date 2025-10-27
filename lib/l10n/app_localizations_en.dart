@@ -117,13 +117,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get calendarPermission => 'Calendar Permission';
 
   @override
-  String get calendarPermissionMessage => 'KPass needs calendar access to sync assignment deadlines';
+  String get calendarPermissionMessage =>
+      'KPass needs calendar access to sync assignment deadlines';
 
   @override
   String get notificationPermission => 'Notification Permission';
 
   @override
-  String get notificationPermissionMessage => 'KPass needs notification access to remind you of deadlines';
+  String get notificationPermissionMessage =>
+      'KPass needs notification access to remind you of deadlines';
 
   @override
   String get grant => 'Grant';
@@ -189,10 +191,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get checkConnection => 'Please check your internet connection';
 
   @override
-  String get sessionExpiredMessage => 'Your session has expired. Please login again.';
+  String get sessionExpiredMessage =>
+      'Your session has expired. Please login again.';
 
   @override
-  String get permissionDeniedMessage => 'Permission denied. Please grant the required permissions in settings.';
+  String get permissionDeniedMessage =>
+      'Permission denied. Please grant the required permissions in settings.';
 
   @override
   String get serverError => 'Server error occurred. Please try again later.';
@@ -201,73 +205,91 @@ class AppLocalizationsEn extends AppLocalizations {
   String get requestTimeout => 'Request timed out. Please try again.';
 
   @override
-  String get tooManyRequests => 'Too many requests. Please wait a moment and try again.';
+  String get tooManyRequests =>
+      'Too many requests. Please wait a moment and try again.';
 
   @override
   String get resourceNotFound => 'The requested resource was not found.';
 
   @override
-  String get accessDenied => 'Access denied. You don\'t have permission to access this resource.';
+  String get accessDenied =>
+      'Access denied. You don\'t have permission to access this resource.';
 
   @override
   String get invalidData => 'Invalid data received from server.';
 
   @override
-  String get storageError => 'Storage error occurred. Please check available space.';
+  String get storageError =>
+      'Storage error occurred. Please check available space.';
 
   @override
-  String get calendarError => 'Calendar error occurred. Please check calendar permissions.';
+  String get calendarError =>
+      'Calendar error occurred. Please check calendar permissions.';
 
   @override
-  String get notificationError => 'Notification error occurred. Please check notification permissions.';
+  String get notificationError =>
+      'Notification error occurred. Please check notification permissions.';
 
   @override
   String get syncError => 'Synchronization failed. Please try again.';
 
   @override
-  String get validationError => 'Validation error occurred. Please check your input.';
+  String get validationError =>
+      'Validation error occurred. Please check your input.';
 
   @override
-  String get configurationError => 'Configuration error. Please contact support.';
+  String get configurationError =>
+      'Configuration error. Please contact support.';
 
   @override
   String get featureNotImplemented => 'This feature is not implemented yet.';
 
   @override
-  String get backgroundSyncError => 'Background sync failed. Please check your settings.';
+  String get backgroundSyncError =>
+      'Background sync failed. Please check your settings.';
 
   @override
-  String get batteryOptimizationWarning => 'Battery optimization may prevent background sync.';
+  String get batteryOptimizationWarning =>
+      'Battery optimization may prevent background sync.';
 
   @override
-  String get fcmError => 'Push notification error. Local notifications will be used instead.';
+  String get fcmError =>
+      'Push notification error. Local notifications will be used instead.';
 
   @override
   String get cacheError => 'Cache error occurred. Data may be outdated.';
 
   @override
-  String get encryptionError => 'Security error occurred. Please restart the app.';
+  String get encryptionError =>
+      'Security error occurred. Please restart the app.';
 
   @override
-  String get tokenFormatError => 'Invalid token format. Please check your token.';
+  String get tokenFormatError =>
+      'Invalid token format. Please check your token.';
 
   @override
-  String get courseNotFound => 'Course not found. It may have been removed or you may not have access.';
+  String get courseNotFound =>
+      'Course not found. It may have been removed or you may not have access.';
 
   @override
-  String get assignmentNotFound => 'Assignment not found. It may have been removed or modified.';
+  String get assignmentNotFound =>
+      'Assignment not found. It may have been removed or modified.';
 
   @override
-  String get calendarEventError => 'Failed to manage calendar event. Please check calendar permissions.';
+  String get calendarEventError =>
+      'Failed to manage calendar event. Please check calendar permissions.';
 
   @override
-  String get reminderError => 'Failed to schedule reminder. Please check notification permissions.';
+  String get reminderError =>
+      'Failed to schedule reminder. Please check notification permissions.';
 
   @override
-  String get webViewError => 'Login failed. Please try again or use manual token input.';
+  String get webViewError =>
+      'Login failed. Please try again or use manual token input.';
 
   @override
-  String get shibbolethError => 'University authentication failed. Please check your credentials.';
+  String get shibbolethError =>
+      'University authentication failed. Please check your credentials.';
 
   @override
   String get manualTokenTitle => 'Manual Token Input';
@@ -276,7 +298,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get enterCanvasToken => 'Enter Your Canvas Access Token';
 
   @override
-  String get tokenDescription => 'You can generate an access token from your Canvas account settings. This token will be stored securely on your device.';
+  String get tokenDescription =>
+      'You can generate an access token from your Canvas account settings. This token will be stored securely on your device.';
 
   @override
   String get accessToken => 'Access Token';
@@ -321,7 +344,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get tokenTooLong => 'Token is too long. Please check and try again';
 
   @override
-  String get tokenInvalidCharacters => 'Token contains invalid characters. Only letters, numbers, and ~ are allowed';
+  String get tokenInvalidCharacters =>
+      'Token contains invalid characters. Only letters, numbers, and ~ are allowed';
 
   @override
   String welcomeUser(String userName) {
@@ -332,7 +356,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get failedToPasteClipboard => 'Failed to paste from clipboard';
 
   @override
-  String get unexpectedError => 'An unexpected error occurred. Please try again.';
+  String get unexpectedError =>
+      'An unexpected error occurred. Please try again.';
 
   @override
   String get canvasSettingsTitle => 'Canvas Settings';
@@ -359,10 +384,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get tokenHint1 => 'Token should be 64-128 characters long';
 
   @override
-  String get tokenHint2 => 'Only letters, numbers, and ~ characters are allowed';
+  String get tokenHint2 =>
+      'Only letters, numbers, and ~ characters are allowed';
 
   @override
-  String get tokenHint3 => 'You can find your token in Canvas Settings > Approved Integrations';
+  String get tokenHint3 =>
+      'You can find your token in Canvas Settings > Approved Integrations';
 
   @override
   String get tokenHint4 => 'Make sure to copy the entire token without spaces';
@@ -380,10 +407,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get notificationsDisabled => 'Notifications Disabled';
 
   @override
-  String get notificationPermissionGranted => 'You will receive assignment reminders';
+  String get notificationPermissionGranted =>
+      'You will receive assignment reminders';
 
   @override
-  String get notificationPermissionDenied => 'Grant permission to receive notifications';
+  String get notificationPermissionDenied =>
+      'Grant permission to receive notifications';
 
   @override
   String get pushNotifications => 'Push Notifications';
@@ -404,19 +433,22 @@ class AppLocalizationsEn extends AppLocalizations {
   String get assignmentReminders => 'Assignment Reminders';
 
   @override
-  String get assignmentRemindersSubtitle => 'Get reminded before assignment deadlines';
+  String get assignmentRemindersSubtitle =>
+      'Get reminded before assignment deadlines';
 
   @override
   String get newAssignmentNotifications => 'New Assignment Notifications';
 
   @override
-  String get newAssignmentNotificationsSubtitle => 'Get notified when new assignments are posted';
+  String get newAssignmentNotificationsSubtitle =>
+      'Get notified when new assignments are posted';
 
   @override
   String get assignmentUpdateNotifications => 'Assignment Update Notifications';
 
   @override
-  String get assignmentUpdateNotificationsSubtitle => 'Get notified when assignments are modified';
+  String get assignmentUpdateNotificationsSubtitle =>
+      'Get notified when assignments are modified';
 
   @override
   String get sound => 'Sound';
@@ -434,7 +466,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get reminderTiming => 'Reminder Timing';
 
   @override
-  String get reminderTimingSubtitle => 'Choose when to receive assignment reminders before the due date';
+  String get reminderTimingSubtitle =>
+      'Choose when to receive assignment reminders before the due date';
 
   @override
   String get fifteenMinutes => '15 minutes';
@@ -455,7 +488,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get quietHours => 'Quiet Hours';
 
   @override
-  String get quietHoursSubtitle => 'Set hours when you don\'t want to receive notifications';
+  String get quietHoursSubtitle =>
+      'Set hours when you don\'t want to receive notifications';
 
   @override
   String get startTime => 'Start Time';
@@ -476,7 +510,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get courseNotifications => 'Course Notifications';
 
   @override
-  String get courseNotificationsSubtitle => 'Choose which courses to receive notifications for';
+  String get courseNotificationsSubtitle =>
+      'Choose which courses to receive notifications for';
 
   @override
   String get noCoursesFound => 'No courses found';
@@ -512,10 +547,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get serviceStatus => 'Service Status';
 
   @override
-  String get notificationServiceAvailable => 'Notification service is available';
+  String get notificationServiceAvailable =>
+      'Notification service is available';
 
   @override
-  String get notificationServiceUnavailable => 'Notification service is not available';
+  String get notificationServiceUnavailable =>
+      'Notification service is not available';
 
   @override
   String get refreshPushToken => 'Refresh Push Token';
@@ -557,7 +594,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get clearAllNotifications => 'Clear All Notifications';
 
   @override
-  String get clearAllNotificationsMessage => 'This will permanently delete all notification history. This action cannot be undone.';
+  String get clearAllNotificationsMessage =>
+      'This will permanently delete all notification history. This action cannot be undone.';
 
   @override
   String get noNotificationsYet => 'No notifications yet';

@@ -297,8 +297,12 @@ class ExternalBrowserAuthService {
         );
       }
 
+      // For external browser login, the proxy server will handle browser automation
+      // We don't need to send cookies as the server will extract them internally
+      final emptyCookies = <Map<String, dynamic>>[];
+
       // Call proxy API to complete external browser login
-      final result = await _apiClient.completeExternalBrowserLogin(sessionId);
+      final result = await _apiClient.completeExternalBrowserLogin(sessionId, emptyCookies);
 
       if (result.isFailure) {
         if (kDebugMode && EnvironmentConfig.enableLogging) {
