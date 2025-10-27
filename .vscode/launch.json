@@ -1,0 +1,40 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Flutter (Debug Mode - iPhone 16e)",
+      "type": "dart",
+      "request": "launch",
+      "program": "lib/main.dart",
+      "args": [],
+      "flutterMode": "debug",
+      "deviceId": "B73EC2A8-2B72-4A2E-B3E5-84BF173790A0"
+    },
+    {
+      "name": "Flutter (Debug Mode - Auto Select)",
+      "type": "dart",
+      "request": "launch",
+      "program": "lib/main.dart",
+      "args": [],
+      "flutterMode": "debug"
+    },
+    {
+      "name": "Flutter (Debug Mode - macOS)",
+      "type": "dart",
+      "request": "launch",
+      "program": "lib/main.dart",
+      "args": [],
+      "flutterMode": "debug",
+      "deviceId": "macos"
+    },
+    {
+      "name": "Flutter (Debug Mode - Chrome)",
+      "type": "dart",
+      "request": "launch",
+      "program": "lib/main.dart",
+      "args": [],
+      "flutterMode": "debug",
+      "deviceId": "chrome"
+    }
+  ]
+}

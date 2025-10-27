@@ -1,0 +1,9 @@
+<!-- Calendar permissions for Android -->
+<!-- Add these permissions to your AndroidManifest.xml file -->
+
+<uses-permission android:name="android.permission.READ_CALENDAR" />
+<uses-permission android:name="android.permission.WRITE_CALENDAR" />
+
+<!-- Optional: For better user experience on Android 6.0+ -->
+<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />

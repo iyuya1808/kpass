@@ -1,0 +1,11 @@
+<!-- Calendar permission usage description for iOS -->
+<!-- Add this to your Info.plist file -->
+
+<key>NSCalendarsUsageDescription</key>
+<string>This app needs access to your calendar to sync assignment due dates and help you stay organized with your coursework.</string>
+
+<key>NSCalendarsWriteOnlyAccessUsageDescription</key>
+<string>This app needs write access to your calendar to create events for assignment due dates.</string>
+
+<key>NSCalendarsFullAccessUsageDescription</key>
+<string>This app needs full calendar access to sync assignment due dates and manage your academic schedule.</string>
