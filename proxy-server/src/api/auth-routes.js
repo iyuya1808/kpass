@@ -1684,39 +1684,17 @@ router.post('/credentials-login', applyAuthRateLimit, [
     // eslint-disable-next-line no-console
     console.log('[trace] navigated to portal/login');
 
-    // Stabilize after potential redirects
-    try { await page.waitForNetworkIdle({ timeout: 30000 }); } catch (_) {}
-
-    // If redirected to IdP, click keio.jp when present
+    // Navigate into IdP if needed (try to click keio.jp link if present)
     try {
       const keioLink = await page.$x("//a[contains(translate(text(),'KEIO.JP','keio.jp'),'keio.jp')]");
       if (keioLink && keioLink.length > 0) {
         await keioLink[0].click();
-        await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
-        try { await page.waitForNetworkIdle({ timeout: 20000 }); } catch(_) {}
+        await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 }).catch(() => {});
       }
     } catch (_) {}
 
     // eslint-disable-next-line no-console
     console.log('[trace] attempting to locate username/password fields');
-
-    // Helper: search selector across all frames with optional wait
-    async function findInFrames(selectors, waitMs = 15000) {
-      const start = Date.now();
-      while (Date.now() - start < waitMs) {
-        const frames = page.frames();
-        for (const frame of frames) {
-          for (const sel of selectors) {
-            try {
-              const handle = await frame.$(sel);
-              if (handle) return handle;
-            } catch (_) {}
-          }
-        }
-        await new Promise(r => setTimeout(r, 250));
-      }
-      return null;
-    }
 
     // Try to locate username/password inputs generically
     const userSelectors = [
@@ -1724,48 +1702,36 @@ router.post('/credentials-login', applyAuthRateLimit, [
       'input[name="username"]',
       'input[id*="user" i]',
       'input[name="user"]',
-      'input[type="text"]',
-      '#okta-signin-username',
-      'input#idp-discovery-username'
+      'input[type="text"]'
     ];
     const passSelectors = [
       'input[type="password"]',
       'input[name*="pass" i]',
-      'input[id*="pass" i]',
-      '#okta-signin-password'
+      'input[id*="pass" i]'
     ];
 
-    // Find and type username with retry around navigation
-    let userInput = await findInFrames(userSelectors, 20000);
-    if (!userInput) {
-      // One more attempt after possible navigation settle
-      try { await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }); } catch(_) {}
-      try { await page.waitForNetworkIdle({ timeout: 10000 }); } catch(_) {}
-      userInput = await findInFrames(userSelectors, 10000);
-    }
+    // Username
+    let userInput = null;
+    for (const sel of userSelectors) { userInput = await page.$(sel); if (userInput) break; }
     if (!userInput) throw new Error('Username field not found');
-    try { await userInput.click({ delay: 20 }); } catch(_) {}
-    try { await page.keyboard.down('Control'); await page.keyboard.press('A'); await page.keyboard.up('Control'); } catch(_) {}
+    await userInput.click({ delay: 20 });
+    await page.keyboard.down('Control').catch(() => {});
+    await page.keyboard.press('A').catch(() => {});
+    await page.keyboard.up('Control').catch(() => {});
     await page.keyboard.type(username, { delay: 20 });
 
-    // Find and type password
-    let passInput = await findInFrames(passSelectors, 20000);
-    if (!passInput) {
-      try { await page.waitForNetworkIdle({ timeout: 8000 }); } catch(_) {}
-      passInput = await findInFrames(passSelectors, 10000);
-    }
+    // Password
+    let passInput = null;
+    for (const sel of passSelectors) { passInput = await page.$(sel); if (passInput) break; }
     if (!passInput) throw new Error('Password field not found');
-    try { await passInput.click({ delay: 20 }); } catch(_) {}
+    await passInput.click({ delay: 20 });
     await page.keyboard.type(password, { delay: 18 });
 
     // Submit
     let submitted = false;
     try {
-      const frames = page.frames();
-      for (const frame of frames) {
-        const submitBtn = await frame.$('button[type="submit"], input[type="submit"], button');
-        if (submitBtn) { await submitBtn.click({ delay: 20 }); submitted = true; break; }
-      }
+      const submitBtn = await page.$('button[type="submit"], input[type="submit"], button');
+      if (submitBtn) { await submitBtn.click({ delay: 20 }); submitted = true; }
     } catch (_) {}
     if (!submitted) { await page.keyboard.press('Enter'); }
 
