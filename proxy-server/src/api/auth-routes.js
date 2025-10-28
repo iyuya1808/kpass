@@ -1776,7 +1776,8 @@ router.post('/credentials-login', applyAuthRateLimit, [
     // Next (if any)
     console.log('[trace] clicking next (if present)');
     await clickInFrames(page, nextButtonSelectors, 3000).catch(()=>{});
-    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }).catch(()=>{});
+    // Do not block on long navigation; give it up to 5s then proceed to poll fields
+    await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 1000 }).catch(()=>{});
 
     // Password
     console.log('[trace] waiting password field');
