@@ -1692,6 +1692,7 @@ router.post('/credentials-login', applyAuthRateLimit, [
     if (locks.get(lockKey) === true) {
       // eslint-disable-next-line no-console
       console.log(`[trace] credentials-login in progress; user=${username.substring(0,3)}***`);
+      setCredProgress(progressKey, 'in_progress', 'ログイン進行中');
       return res.status(202).json({ success: false, inProgress: true, message: 'Login already in progress' });
     }
     locks.set(lockKey, true);
@@ -1712,7 +1713,7 @@ router.post('/credentials-login', applyAuthRateLimit, [
 
     // Go directly to SAML entry (faster: domcontentloaded, 8s timeout)
     const t0 = Date.now();
-    setCredProgress(progressKey, 'navigate', 'ログインページへ移動中…');
+    setCredProgress(progressKey, 'navigate', '/login/saml にアクセス');
     try {
       await page.goto(`${baseUrl}/login/saml`, { waitUntil: 'domcontentloaded', timeout: 8000 });
     } catch (_) {
@@ -1786,36 +1787,36 @@ router.post('/credentials-login', applyAuthRateLimit, [
 
     // Username
     console.log('[trace] waiting username field');
-    setCredProgress(progressKey, 'username', 'ユーザー名を送信中…');
+    setCredProgress(progressKey, 'username_wait', 'ユーザー名入力欄を待機');
     // Wait until Okta page is active or username field appears (short)
     await page.waitForFunction(() => /okta\.com|keio\.okta\.com/.test(location.hostname) || document.querySelector('input[name="identifier"],#okta-signin-username,input[type="email"],input[name="username"]'), { timeout: 2000 }).catch(()=>{});
     let userInput = await waitInFrames(page, usernameSelectors, 2000);
     if (!userInput) userInput = await page.$(usernameSelectors[0]);
     if (!userInput) throw new Error('Username field not found');
-    // keep step as 'username' during input
-    setCredProgress(progressKey, 'username', 'ユーザー名を送信中…');
+    setCredProgress(progressKey, 'username_input', 'ユーザー名を入力中');
     await userInput.click({ delay: 20 });
     await page.keyboard.type(username, { delay: 20 });
 
     // Next (if any)
     console.log('[trace] clicking next (if present)');
-    // no separate 'next' step
+    setCredProgress(progressKey, 'next', '次へをクリック');
+    await clickInFrames(page, nextButtonSelectors, 2000).catch(()=>{});
+    // Do not block on long navigation; give it up to 800ms then proceed to poll fields
     await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 800 }).catch(()=>{});
 
     // Password
     console.log('[trace] waiting password field');
-    setCredProgress(progressKey, 'password', 'パスワードを送信中…');
+    setCredProgress(progressKey, 'password_wait', 'パスワード入力欄を待機');
     let passInput = await waitInFrames(page, passwordSelectors, 2000);
     if (!passInput) passInput = await page.$(passwordSelectors[0]);
     if (!passInput) throw new Error('Password field not found');
-    // keep step as 'password' during input
-    setCredProgress(progressKey, 'password', 'パスワードを送信中…');
+    setCredProgress(progressKey, 'password_input', 'パスワードを入力中');
     await passInput.click({ delay: 20 });
     await page.keyboard.type(password, { delay: 18 });
 
     // Sign in
     console.log('[trace] clicking sign-in/submit');
-    setCredProgress(progressKey, 'submit', 'サインイン中…');
+    setCredProgress(progressKey, 'submit', 'サインイン送信中');
     const clicked = await clickInFrames(page, signInButtonSelectors, 2000);
     if (!clicked) { await page.keyboard.press('Enter'); }
 
