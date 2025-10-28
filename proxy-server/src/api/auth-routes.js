@@ -1634,6 +1634,12 @@ router.post('/cancel/:sessionId', async (req, res) => {
   }
 });
 
+// In-memory single-flight lock for credentials login
+const ensureCredsLockMap = (app) => {
+  app.locals.credentialsLoginLocks = app.locals.credentialsLoginLocks || new Map();
+  return app.locals.credentialsLoginLocks;
+};
+
 // Credentials login placed early to avoid any route fall-through
 router.post('/credentials-login', applyAuthRateLimit, [
   body('username')
@@ -1652,6 +1658,8 @@ router.post('/credentials-login', applyAuthRateLimit, [
   let password = '';
   let browser = null;
   let page = null;
+  const locks = ensureCredsLockMap(req.app);
+  let lockKey = '';
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -1660,6 +1668,15 @@ router.post('/credentials-login', applyAuthRateLimit, [
 
     username = String(req.body.username || '');
     password = String(req.body.password || '');
+    lockKey = username.toLowerCase();
+
+    // Single-flight per user
+    if (locks.get(lockKey) === true) {
+      // eslint-disable-next-line no-console
+      console.log(`[trace] credentials-login in progress; user=${username.substring(0,3)}***`);
+      return res.status(202).json({ success: false, inProgress: true, message: 'Login already in progress' });
+    }
+    locks.set(lockKey, true);
 
     const maskedUser = `${username.substring(0, 3)}***`;
     logger.info(`Starting credentials login for user: ${maskedUser}`);
@@ -1680,8 +1697,6 @@ router.post('/credentials-login', applyAuthRateLimit, [
     } catch (_) {
       await page.goto(`${baseUrl}/login`, { waitUntil: 'networkidle2', timeout: 60000 });
     }
-
-    // eslint-disable-next-line no-console
     console.log('[trace] navigated to /login/saml');
 
     // If we are still on K-LMS selector page, click keio.jp link
@@ -1693,23 +1708,26 @@ router.post('/credentials-login', applyAuthRateLimit, [
       }
     } catch (_) {}
 
-    // Helper: wait for any selector
-    async function waitForAny(selectors, timeoutMs = 20000) {
-      const start = Date.now();
-      while (Date.now() - start < timeoutMs) {
+    // Frame-aware utilities
+    async function findInFrames(pageRef, selectors) {
+      const frames = pageRef.frames();
+      for (const frame of frames) {
         for (const sel of selectors) {
           try {
-            const h = await page.$(sel);
-            if (h) return { handle: h, selector: sel };
+            const h = await frame.$(sel);
+            if (h) return h;
           } catch (_) {}
         }
-        await new Promise(r => setTimeout(r, 250));
       }
-      return { handle: null, selector: null };
+      return null;
+    }
+    async function clickInFrames(pageRef, selectors) {
+      const h = await findInFrames(pageRef, selectors);
+      if (h) { await h.click({ delay: 20 }); return true; }
+      return false;
     }
 
-    // Username step on Okta (discovery or combined form)
-    // Common selectors: new okta: input[name="identifier"], legacy: #okta-signin-username
+    // Selectors
     const usernameSelectors = [
       'input[name="identifier"]',
       '#okta-signin-username',
@@ -1717,69 +1735,55 @@ router.post('/credentials-login', applyAuthRateLimit, [
       'input[name="username"]',
       'input[id*="user" i]'
     ];
-
     const nextButtonSelectors = [
-      'input[type="submit"]',
-      'button[type="submit"]',
-      'button[data-type="next"]',
-      'input[data-type="next"]',
-      'input[value="Next"]',
-      'button:has-text("Next")'
+      'button[data-type="next"]', 'input[data-type="next"]', 'input[value="Next"]', 'button[type="submit"]', 'input[type="submit"]'
     ];
-
     const passwordSelectors = [
-      'input[name="credentials.passcode"]', // okta new
-      'input[name="password"]',
-      '#okta-signin-password',
-      'input[type="password"]',
-      'input[id*="pass" i]'
+      'input[name="credentials.passcode"]', '#okta-signin-password', 'input[name="password"]', 'input[type="password"]', 'input[id*="pass" i]'
     ];
-
     const signInButtonSelectors = [
-      'button[data-type="submit"]',
-      'input[data-type="submit"]',
-      'input[type="submit"]',
-      'button[type="submit"]',
-      'button:has-text("Sign in")',
-      'input[value="Sign in"]'
+      'button[data-type="submit"]', 'input[data-type="submit"]', 'input[value="Sign in"]', 'button[type="submit"]'
+    ];
+    const mfaIndicators = [
+      'input[name="otp"]',
+      'input[name="oneTimePassword"]',
+      'input[name="verificationCode"]',
+      'button[data-se="okta_verify_button"]',
+      'div[data-se="okta_verify_push"]'
     ];
 
     // Username
-    // eslint-disable-next-line no-console
     console.log('[trace] waiting username field');
-    const u = await waitForAny(usernameSelectors, 25000);
-    if (!u.handle) throw new Error('Username field not found');
-    await u.handle.click({ delay: 20 });
+    let userInput = await findInFrames(page, usernameSelectors);
+    if (!userInput) userInput = await page.$(usernameSelectors[0]);
+    if (!userInput) throw new Error('Username field not found');
+    await userInput.click({ delay: 20 });
     await page.keyboard.type(username, { delay: 20 });
 
-    // Click Next if present (discovery flow)
-    // eslint-disable-next-line no-console
+    // Next (if any)
     console.log('[trace] clicking next (if present)');
-    const nextBtn = await waitForAny(nextButtonSelectors, 5000);
-    if (nextBtn.handle) {
-      await nextBtn.handle.click({ delay: 20 }).catch(() => {});
-      await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {});
-    }
+    await clickInFrames(page, nextButtonSelectors).catch(()=>{});
+    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }).catch(()=>{});
 
     // Password
-    // eslint-disable-next-line no-console
     console.log('[trace] waiting password field');
-    const p = await waitForAny(passwordSelectors, 25000);
-    if (!p.handle) throw new Error('Password field not found');
-    await p.handle.click({ delay: 20 });
+    let passInput = await findInFrames(page, passwordSelectors);
+    if (!passInput) passInput = await page.$(passwordSelectors[0]);
+    if (!passInput) throw new Error('Password field not found');
+    await passInput.click({ delay: 20 });
     await page.keyboard.type(password, { delay: 18 });
 
     // Sign in
-    // eslint-disable-next-line no-console
     console.log('[trace] clicking sign-in/submit');
-    const signBtn = await waitForAny(signInButtonSelectors, 7000);
-    if (signBtn.handle) {
-      await signBtn.handle.click({ delay: 20 }).catch(() => {});
-    } else {
-      await page.keyboard.press('Enter');
+    const clicked = await clickInFrames(page, signInButtonSelectors);
+    if (!clicked) { await page.keyboard.press('Enter'); }
+
+    // If MFA is required, fail fast (仕様によりフォールバックなし)
+    const mfaFound = await findInFrames(page, mfaIndicators);
+    if (mfaFound) {
+      throw new Error('MFA required');
     }
 
-    // eslint-disable-next-line no-console
     console.log('[trace] submitted; waiting SAML completion');
 
     // SAML wait (3 min)
@@ -1792,8 +1796,8 @@ router.post('/credentials-login', applyAuthRateLimit, [
 
     // Cookies
     const cookies = await page.cookies('https://lms.keio.jp');
-    // eslint-disable-next-line no-console
     console.log(`[trace] cookies count=${cookies ? cookies.length : 0}`);
+
     if (!cookies || cookies.length === 0) throw new Error('No cookies found after login');
     const cookieString = cookies.map(c => `${c.name}=${c.value}`).join('; ');
 
@@ -1804,10 +1808,9 @@ router.post('/credentials-login', applyAuthRateLimit, [
       try {
         const resp = await fetch(`${baseUrl}${ep}`, { method: 'GET', headers: { 'Cookie': cookieString, 'Accept': 'application/json', 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' }, timeout: 10000 });
         logger.info(`Canvas API validation response for ${ep}: ${resp.status} ${resp.statusText}`);
-        // eslint-disable-next-line no-console
         console.log(`[trace] validate ${ep}: ${resp.status}`);
         if (resp.ok) { if (ep === '/api/v1/users/self') { try { userData = await resp.json(); } catch(_){} } ok = true; break; }
-      } catch(e) { logger.warn(`Validation error for ${ep}: ${e.message}`); /* eslint-disable-next-line no-console */ console.log(`[trace] validate error ${ep}: ${e.message}`); }
+      } catch(e) { logger.warn(`Validation error for ${ep}: ${e.message}`); console.log(`[trace] validate error ${ep}: ${e.message}`); }
     }
     if (!ok) throw new Error('All cookie validation attempts failed');
 
@@ -1824,12 +1827,13 @@ router.post('/credentials-login', applyAuthRateLimit, [
   } catch (error) {
     const maskedUser = username ? `${username.substring(0, 3)}***` : '***';
     logger.error(`Credentials login failed for user ${maskedUser}: ${error.message}`);
-    // eslint-disable-next-line no-console
     console.log(`[trace] credentials-login failed user=${maskedUser} reason=${error.message}`);
     try { if (page) await page.close(); } catch(_) {}
     try { if (browser) await browser.close(); } catch(_) {}
     if (password) password = ''.padEnd(password.length, '\\0');
     return res.status(400).json({ success: false, error: 'Credentials login failed', message: 'アプリ内で失敗しました。もう一度お試しください。' });
+  } finally {
+    if (lockKey) locks.delete(lockKey);
   }
 });
 
