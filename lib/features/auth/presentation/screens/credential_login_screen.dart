@@ -18,6 +18,7 @@ class CredentialLoginScreen extends StatefulWidget {
 class _CredentialLoginScreenState extends State<CredentialLoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _usernameController = TextEditingController();
+  final _passwordController = TextEditingController();
 
   bool _isLoading = false;
   String? _errorMessage;
@@ -25,6 +26,7 @@ class _CredentialLoginScreenState extends State<CredentialLoginScreen> {
   @override
   void dispose() {
     _usernameController.dispose();
+    _passwordController.dispose();
     super.dispose();
   }
 
@@ -41,11 +43,10 @@ class _CredentialLoginScreenState extends State<CredentialLoginScreen> {
     });
 
     final username = _usernameController.text.trim();
+    final password = _passwordController.text;
 
     if (kDebugMode) {
-      debugPrint(
-        'CredentialLoginScreen: Starting external browser login for user: $username',
-      );
+      debugPrint('CredentialLoginScreen: Starting credentials login for user: $username');
     }
 
     try {
@@ -55,24 +56,20 @@ class _CredentialLoginScreenState extends State<CredentialLoginScreen> {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
 
       if (kDebugMode) {
-        debugPrint('CredentialLoginScreen: Calling startExternalBrowserLogin');
+        debugPrint('CredentialLoginScreen: Calling authenticateWithCredentials');
       }
-      final result = await authProvider.startServerPuppeteerLogin(username);
+      final result = await authProvider.authenticateWithCredentials(username, password);
 
       if (kDebugMode) {
-        debugPrint(
-          'CredentialLoginScreen: External browser login result: ${result.type}',
-        );
+        debugPrint('CredentialLoginScreen: Credentials login result: ${result.type}');
       }
 
       if (!mounted) return;
 
       if (result.isSuccess) {
-        // External browser login completed successfully
+        // Credentials login completed successfully
         if (kDebugMode) {
-          debugPrint(
-            'CredentialLoginScreen: External browser login completed successfully',
-          );
+          debugPrint('CredentialLoginScreen: Credentials login completed successfully');
         }
 
         // Navigate to dashboard or home screen
@@ -81,9 +78,7 @@ class _CredentialLoginScreenState extends State<CredentialLoginScreen> {
         );
       } else {
         if (kDebugMode) {
-          debugPrint(
-            'CredentialLoginScreen: External browser login failed: ${result.userFriendlyMessage}',
-          );
+          debugPrint('CredentialLoginScreen: Credentials login failed: ${result.userFriendlyMessage}');
         }
         setState(() {
           _errorMessage = result.userFriendlyMessage;
@@ -94,7 +89,7 @@ class _CredentialLoginScreenState extends State<CredentialLoginScreen> {
       if (!mounted) return;
 
       if (kDebugMode) {
-        debugPrint('CredentialLoginScreen: Login error: $error');
+        debugPrint('CredentialLoginScreen: Credentials login error: $error');
         debugPrint('CredentialLoginScreen: Error type: ${error.runtimeType}');
       }
 
@@ -130,6 +125,8 @@ class _CredentialLoginScreenState extends State<CredentialLoginScreen> {
                 _buildHeader(theme, l10n),
                 const SizedBox(height: AppConstants.largePadding * 2),
                 _buildUsernameField(theme, l10n),
+                const SizedBox(height: AppConstants.defaultPadding),
+                _buildPasswordField(theme, l10n),
                 if (_errorMessage != null) ...[
                   const SizedBox(height: AppConstants.defaultPadding),
                   _buildErrorCard(theme),
@@ -168,7 +165,7 @@ class _CredentialLoginScreenState extends State<CredentialLoginScreen> {
         ),
         const SizedBox(height: AppConstants.smallPadding),
         Text(
-          'サーバ内のブラウザでK-LMSにログインします（VNC等で操作）',
+          'サーバ側で認証を実行します（ID/パスワード入力）',
           style: theme.textTheme.bodyMedium?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),
@@ -183,8 +180,8 @@ class _CredentialLoginScreenState extends State<CredentialLoginScreen> {
       controller: _usernameController,
       enabled: !_isLoading,
       decoration: InputDecoration(
-        labelText: 'ユーザー名（識別用）',
-        hintText: '慶應IDを入力（識別用）',
+        labelText: 'ユーザー名（慶應ID）',
+        hintText: '例: ist***@keio.jp',
         prefixIcon: const Icon(Icons.person_outline),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
         filled: true,
@@ -201,6 +198,34 @@ class _CredentialLoginScreenState extends State<CredentialLoginScreen> {
         }
         if (value.trim().length < 3) {
           return 'ユーザー名は3文字以上で入力してください';
+        }
+        return null;
+      },
+    );
+  }
+
+  Widget _buildPasswordField(ThemeData theme, AppLocalizations? l10n) {
+    return TextFormField(
+      controller: _passwordController,
+      enabled: !_isLoading,
+      decoration: InputDecoration(
+        labelText: 'パスワード',
+        hintText: 'K-LMSのパスワード',
+        prefixIcon: const Icon(Icons.lock_outline),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        filled: true,
+        fillColor: theme.colorScheme.surfaceContainerHighest.withValues(
+          alpha: 0.3,
+        ),
+      ),
+      obscureText: true,
+      textInputAction: TextInputAction.done,
+      validator: (value) {
+        if (value == null || value.isEmpty) {
+          return 'パスワードを入力してください';
+        }
+        if (value.length < 3) {
+          return 'パスワードが短すぎます';
         }
         return null;
       },
@@ -257,7 +282,7 @@ class _CredentialLoginScreenState extends State<CredentialLoginScreen> {
                 ),
               )
               : Text(
-                'ログインを開始（サーバ内ブラウザ）',
+                'ログイン（ID/パスワード）',
                 style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
