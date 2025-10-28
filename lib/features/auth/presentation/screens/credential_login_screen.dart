@@ -57,7 +57,7 @@ class _CredentialLoginScreenState extends State<CredentialLoginScreen> {
       if (kDebugMode) {
         debugPrint('CredentialLoginScreen: Calling startExternalBrowserLogin');
       }
-      final result = await authProvider.startExternalBrowserLogin(username);
+      final result = await authProvider.startServerPuppeteerLogin(username);
 
       if (kDebugMode) {
         debugPrint(
@@ -168,7 +168,7 @@ class _CredentialLoginScreenState extends State<CredentialLoginScreen> {
         ),
         const SizedBox(height: AppConstants.smallPadding),
         Text(
-          '外部ブラウザでK-LMSにログインします',
+          'サーバ内のブラウザでK-LMSにログインします（VNC等で操作）',
           style: theme.textTheme.bodyMedium?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),
@@ -257,7 +257,7 @@ class _CredentialLoginScreenState extends State<CredentialLoginScreen> {
                 ),
               )
               : Text(
-                '外部ブラウザでログイン',
+                'ログインを開始（サーバ内ブラウザ）',
                 style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,

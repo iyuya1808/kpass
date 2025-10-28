@@ -1,18 +1,18 @@
 import 'package:flutter/foundation.dart';
 import 'package:kpass/core/constants/app_constants.dart';
-import 'package:kpass/features/auth/data/services/external_browser_auth_service.dart';
+import 'package:kpass/features/auth/data/services/puppeteer_auth_service.dart';
 import 'package:kpass/features/auth/domain/entities/auth_state.dart';
 import 'package:kpass/features/auth/domain/entities/auth_result.dart';
 import 'package:kpass/features/auth/domain/entities/user.dart';
 
 class AuthProvider extends ChangeNotifier {
-  final ExternalBrowserAuthService _authService;
+  final PuppeteerAuthService _authService;
   bool _isCompletingLogin = false;
 
   AuthState _authState = const AuthState.initial();
 
-  AuthProvider({ExternalBrowserAuthService? authService})
-    : _authService = authService ?? ExternalBrowserAuthService() {
+  AuthProvider({PuppeteerAuthService? authService})
+    : _authService = authService ?? PuppeteerAuthService() {
     _initialize();
   }
 
@@ -87,34 +87,31 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  /// Start external browser login process
-  Future<AuthResult> startExternalBrowserLogin(String username) async {
+  /// Start puppeteer server-side login process
+  Future<AuthResult> startServerPuppeteerLogin(String username) async {
     try {
       _updateState(const AuthState.authenticating());
 
       if (kDebugMode && EnvironmentConfig.enableVerboseLogging) {
-        debugPrint('AuthProvider: Starting external browser login');
+        debugPrint('AuthProvider: Starting puppeteer server login');
       }
 
-      // Call external browser auth service
-      final result = await _authService.startExternalBrowserLogin(username);
+      final result = await _authService.startPuppeteerLogin(username);
 
       await _handleAuthResult(result);
 
       return result;
     } catch (error) {
       if (kDebugMode && EnvironmentConfig.enableLogging) {
-        debugPrint('AuthProvider: Start external browser login error: $error');
+        debugPrint('AuthProvider: Start puppeteer server login error: $error');
       }
 
       final result = AuthResult.failure(
         type: AuthResultType.unknown,
-        errorMessage: 'Start external browser login failed: $error',
+        errorMessage: 'Start puppeteer login failed: $error',
       );
       _updateState(
-        AuthState.failed(
-          errorMessage: 'Start external browser login failed: $error',
-        ),
+        AuthState.failed(errorMessage: 'Start puppeteer login failed: $error'),
       );
       return result;
     }

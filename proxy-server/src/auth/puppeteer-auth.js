@@ -10,13 +10,13 @@ const CANVAS_BASE_URL = process.env.CANVAS_BASE_URL || 'https://lms.keio.jp';
  * @returns {Promise<object>} A promise that resolves to browser and page objects.
  */
 async function launchManualLoginBrowser(userId) {
-  logger.info('Launching manual login browser for user: %s', userId);
+  logger.info(`Launching manual login browser for user: ${userId}`);
   
   try {
     // Launch browser with headless mode for VPS server-side operation
     // This ensures the browser runs only on the proxy server
     const browser = await puppeteer.launch({
-      headless: true, // Run headless on VPS server
+      headless: true, // Run headless on VPS server (set false if Xvfb/noVNC is used)
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
@@ -56,17 +56,26 @@ async function launchManualLoginBrowser(userId) {
     // Set user agent to avoid detection
     await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
     
-    // Navigate to K-LMS login page
-    await page.goto(`${CANVAS_BASE_URL}/login`, { 
-      waitUntil: 'networkidle2',
-      timeout: 60000 // Increase timeout for VPS
-    });
+    // Navigate to K-LMS portal first (more stable SSO entry)
+    try {
+      await page.goto(`${CANVAS_BASE_URL}/portal.html`, { 
+        waitUntil: 'networkidle2',
+        timeout: 60000 // Increase timeout for VPS
+      });
+      logger.info(`Browser navigated to ${CANVAS_BASE_URL}/portal.html for user: ${userId}`);
+    } catch (e) {
+      logger.warn(`Failed to open portal.html for user ${userId}: ${e.message}. Falling back to /login`);
+      await page.goto(`${CANVAS_BASE_URL}/login`, { 
+        waitUntil: 'networkidle2',
+        timeout: 60000
+      });
+    }
     
     logger.info('Browser launched for manual login. User should log in manually.');
     
     return { browser, page };
   } catch (error) {
-    logger.error('Failed to launch manual login browser: %s', error.message);
+    logger.error(`Failed to launch manual login browser: ${error.message}`);
     throw new Error(`Failed to launch browser: ${error.message}`);
   }
 }
@@ -78,7 +87,7 @@ async function launchManualLoginBrowser(userId) {
  * @returns {Promise<Array<object>>} A promise that resolves to an array of cookies.
  */
 async function waitForManualLogin(page, userId) {
-  logger.info('Waiting for manual login completion for user: %s', userId);
+  logger.info(`Waiting for manual login completion for user: ${userId}`);
   
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
@@ -97,7 +106,7 @@ async function waitForManualLogin(page, userId) {
         }
         
         const currentUrl = page.url();
-        logger.debug('Checking login status for user %s at URL: %s', userId, currentUrl);
+        logger.debug(`Checking login status for user ${userId} at URL: ${currentUrl}`);
         
         // Check if we're on the Canvas dashboard (logged in)
         // More comprehensive login success detection
@@ -124,7 +133,7 @@ async function waitForManualLogin(page, userId) {
           clearTimeout(timeout);
           clearInterval(checkInterval);
           
-          logger.info('Manual login detected for user: %s at URL: %s', userId, currentUrl);
+          logger.info(`Manual login detected for user: ${userId} at URL: ${currentUrl}`);
           
           // Wait longer to ensure all cookies are set and page is fully loaded
           // SAML authentication may take time to set all cookies
@@ -134,11 +143,10 @@ async function waitForManualLogin(page, userId) {
             // Extract cookies with explicit domain specification
             const cookies = await page.cookies('https://lms.keio.jp');
             
-            // Log all cookies for debugging
-            logger.info('All cookies found for user %s:', userId);
+            // Log all cookies for debugging (masked)
+            logger.info(`All cookies found for user ${userId}:`);
             cookies.forEach(cookie => {
-              logger.info('Cookie: %s=%s (domain: %s, path: %s, secure: %s, httpOnly: %s)', 
-                cookie.name, cookie.value.substring(0, 20) + '...', cookie.domain, cookie.path, cookie.secure, cookie.httpOnly);
+              logger.info(`Cookie: ${cookie.name}=${String(cookie.value).substring(0, 20)}... (domain: ${cookie.domain}, path: ${cookie.path}, secure: ${cookie.secure}, httpOnly: ${cookie.httpOnly})`);
             });
             
             // Filter important cookies - more comprehensive filtering
@@ -157,22 +165,22 @@ async function waitForManualLogin(page, userId) {
               cookie.name.includes('logged_in')
             );
             
-            logger.info('Filtered %d important cookies from %d total cookies for user: %s', importantCookies.length, cookies.length, userId);
+            logger.info(`Filtered ${importantCookies.length} important cookies from ${cookies.length} total cookies for user: ${userId}`);
             
             if (importantCookies.length > 0) {
-              logger.info('Successfully extracted %d important cookies for user: %s', importantCookies.length, userId);
+              logger.info(`Successfully extracted ${importantCookies.length} important cookies for user: ${userId}`);
               resolve(importantCookies);
             } else {
-              logger.warn('No important cookies found, returning all cookies for user: %s', userId);
+              logger.warn(`No important cookies found, returning all cookies for user: ${userId}`);
               resolve(cookies);
             }
           } catch (cookieError) {
-            logger.error('Failed to extract cookies: %s', cookieError.message);
+            logger.error(`Failed to extract cookies: ${cookieError.message}`);
             reject(new Error('Failed to extract cookies after login'));
           }
         }
       } catch (error) {
-        logger.error('Error during login check: %s', error.message);
+        logger.error(`Error during login check: ${error.message}`);
         clearTimeout(timeout);
         clearInterval(checkInterval);
         reject(error);
@@ -193,7 +201,7 @@ async function validateSession(cookies) {
       ? cookies.map(c => `${c.name}=${c.value}`).join('; ')
       : cookies;
     
-    logger.info('Validating session with cookies: %s', cookieString.substring(0, 100) + '...');
+    logger.info(`Validating session with cookies: ${cookieString.substring(0, 100)}...`);
     
     // Try multiple endpoints to validate session
     const endpoints = [
@@ -214,7 +222,7 @@ async function validateSession(cookies) {
           timeout: 10000
         });
         
-        logger.info('Session validation response for %s: %d %s', endpoint, response.status, response.statusText);
+        logger.info(`Session validation response for ${endpoint}: ${response.status} ${response.statusText}`);
         
         if (response.ok) {
           let userInfo = null;
@@ -223,7 +231,7 @@ async function validateSession(cookies) {
               userInfo = await response.json();
             }
           } catch (jsonError) {
-            logger.warn('Failed to parse JSON response: %s', jsonError.message);
+            logger.warn(`Failed to parse JSON response: ${jsonError.message}`);
           }
           
           return {
@@ -240,7 +248,7 @@ async function validateSession(cookies) {
           };
         }
       } catch (endpointError) {
-        logger.warn('Failed to validate with endpoint %s: %s', endpoint, endpointError.message);
+        logger.warn(`Failed to validate with endpoint ${endpoint}: ${endpointError.message}`);
         continue;
       }
     }
@@ -251,7 +259,7 @@ async function validateSession(cookies) {
       error: 'All validation endpoints failed'
     };
   } catch (error) {
-    logger.warn('Session validation failed: %s', error.message);
+    logger.warn(`Session validation failed: ${error.message}`);
     return {
       valid: false,
       error: error.message

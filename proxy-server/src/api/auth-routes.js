@@ -1178,4 +1178,283 @@ router.get('/sessions', async (req, res) => {
   }
 });
 
+// Add: In-memory tracking for Puppeteer direct-login sessions
+// Map<sessionId, { userId, username, status, startedAt, browser?, page?, manualControlUrl?, token?, user?, error? }>
+const ensurePuppeteerMap = (app) => {
+  app.locals.activePuppeteerLogins = app.locals.activePuppeteerLogins || new Map();
+  return app.locals.activePuppeteerLogins;
+};
+
+// Add: Helper to kick off background login flow
+async function startBackgroundPuppeteerLogin({ app, sessionId, userId, username }) {
+  const activePuppeteerLogins = ensurePuppeteerMap(app);
+  const baseUrl = process.env.CANVAS_BASE_URL || 'https://lms.keio.jp';
+
+  try {
+    logger.info(`Starting server-side Puppeteer login for session ${sessionId} (user ${username})`);
+
+    const { browser, page } = await launchManualLoginBrowser(userId);
+
+    // Optionally expose a manual control URL (e.g., noVNC) if configured
+    const manualControlUrlBase = process.env.NOVNC_BASE_URL;
+    const manualControlUrl = manualControlUrlBase
+      ? `${manualControlUrlBase}/vnc.html?path=websockify?token=${sessionId}`
+      : undefined;
+
+    // Save initial state
+    activePuppeteerLogins.set(sessionId, {
+      userId,
+      username,
+      status: 'pending',
+      startedAt: Date.now(),
+      browser,
+      page,
+      manualControlUrl,
+    });
+
+    // Navigate to portal first (more stable SSO entry), fallback to /login
+    try {
+      await page.goto(`${baseUrl}/portal.html`, { waitUntil: 'networkidle2', timeout: 60000 });
+      logger.info(`Navigated to ${baseUrl}/portal.html for session ${sessionId}`);
+    } catch (e) {
+      logger.warn(`Failed to open portal.html, falling back to /login for session ${sessionId}: ${e.message}`);
+      await page.goto(`${baseUrl}/login`, { waitUntil: 'networkidle2', timeout: 60000 });
+    }
+
+    activePuppeteerLogins.get(sessionId).status = 'authenticating';
+
+    // Wait up to 3 minutes for SAML to complete and land back on K-LMS (not auth pages)
+    await page.waitForFunction(() => {
+      const url = window.location.href;
+      return url.includes('lms.keio.jp') &&
+             !url.includes('/login') &&
+             !url.includes('/portal') &&
+             !url.includes('okta.com') &&
+             !url.includes('/saml') &&
+             !url.includes('/auth');
+    }, { timeout: 180000 });
+
+    logger.info(`SAML flow completed for session ${sessionId}, final URL: ${page.url()}`);
+
+    // Multi-method validation: elements and page content
+    await page.waitForFunction(() => {
+      const url = location.href;
+      const q = (s) => document.querySelector(s);
+      const text = (t) => document.body && document.body.innerText && document.body.innerText.includes(t);
+      const urlOk = url.includes('lms.keio.jp') && !url.includes('/login') && !url.includes('/portal') && !url.includes('okta.com') && !url.includes('/saml') && !url.includes('/auth');
+      const formGone = !q('#pseudonym_session_unique_id') && !q('input[type="password"]');
+      const userEl = q('#global_nav_profile_link') || q('img[alt*="avatar"]');
+      const dashEl = q('#dashboard') || q('.ic-Dashboard');
+      const textOk = text('Dashboard') || text('コース') || text('Courses');
+      return urlOk && (userEl || dashEl || formGone || textOk);
+    }, { timeout: 180000 });
+
+    // Small grace period for cookies to settle
+    await new Promise(r => setTimeout(r, 5000));
+
+    // Extract cookies
+    const cookies = await page.cookies('https://lms.keio.jp');
+    logger.info(`Received ${cookies ? cookies.length : 0} cookies for session ${sessionId}`);
+
+    if (!cookies || cookies.length === 0) {
+      throw new Error('No cookies found after login');
+    }
+
+    // Build cookie string
+    const cookieString = cookies.map(c => `${c.name}=${c.value}`).join('; ');
+
+    // Validate cookies via multiple endpoints
+    activePuppeteerLogins.get(sessionId).status = 'validating';
+
+    const endpoints = ['/api/v1/users/self', '/api/v1/courses', '/dashboard'];
+    let userData = null;
+    let validationSuccess = false;
+
+    for (const endpoint of endpoints) {
+      try {
+        const resp = await fetch(`${baseUrl}${endpoint}`, {
+          method: 'GET',
+          headers: {
+            'Cookie': cookieString,
+            'Accept': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+          },
+          timeout: 10000
+        });
+
+        logger.info(`Canvas API validation response for ${endpoint} (session ${sessionId}): ${resp.status} ${resp.statusText}`);
+
+        if (resp.ok) {
+          if (endpoint === '/api/v1/users/self') {
+            try {
+              userData = await resp.json();
+            } catch (_) {
+              // ignore JSON errors for non-JSON endpoints
+            }
+          }
+          validationSuccess = true;
+          break;
+        } else {
+          const bodyText = await resp.text();
+          logger.warn(`Validation failed for endpoint ${endpoint} (session ${sessionId}): HTTP ${resp.status}, Response: ${bodyText}`);
+        }
+      } catch (err) {
+        logger.warn(`Validation error for endpoint ${endpoint} (session ${sessionId}): ${err.message}`);
+      }
+    }
+
+    if (!validationSuccess) {
+      throw new Error('All cookie validation attempts failed');
+    }
+
+    // Store session server-side
+    sessionManager.addSession(userId, {
+      cookies: cookieString,
+      username,
+      loginMethod: 'puppeteer',
+      userInfo: userData || undefined
+    });
+
+    // Issue JWT token for client to reference session
+    const token = generateToken({ userId, username });
+
+    const finalUser = {
+      id: userData?.id || 1,
+      name: userData?.name || username,
+      username,
+      loginMethod: 'puppeteer',
+      email: userData?.email || username,
+      avatar_url: userData?.avatar_url
+    };
+
+    // Close browser
+    try { await page.close(); } catch (_) {}
+    try { await browser.close(); } catch (_) {}
+
+    // Update session state
+    activePuppeteerLogins.set(sessionId, {
+      userId,
+      username,
+      status: 'success',
+      startedAt: activePuppeteerLogins.get(sessionId)?.startedAt || Date.now(),
+      manualControlUrl,
+      token,
+      user: finalUser,
+    });
+
+    logger.info(`Puppeteer login completed successfully for session ${sessionId}`);
+  } catch (error) {
+    logger.error(`Puppeteer login failed for session ${sessionId}: ${error.message}`);
+    const activePuppeteerLogins = ensurePuppeteerMap(app);
+    const entry = activePuppeteerLogins.get(sessionId);
+    // Attempt to close any resources
+    if (entry?.page) { try { await entry.page.close(); } catch (_) {} }
+    if (entry?.browser) { try { await entry.browser.close(); } catch (_) {} }
+
+    activePuppeteerLogins.set(sessionId, {
+      userId,
+      username,
+      status: 'failed',
+      startedAt: entry?.startedAt || Date.now(),
+      manualControlUrl: entry?.manualControlUrl,
+      error: error.message
+    });
+  }
+}
+
+// Add: Start Puppeteer direct-login
+router.post('/start-puppeteer-login', applyAuthRateLimit, [
+  body('username')
+    .notEmpty()
+    .withMessage('Username is required')
+    .isLength({ min: 3, max: 50 })
+    .withMessage('Username must be between 3 and 50 characters')
+    .customSanitizer(sanitizeInput)
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ success: false, error: 'Validation failed', details: errors.array() });
+    }
+
+    const { username } = req.body;
+    const userId = `user_${username}`;
+    const sessionId = `session_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+
+    const activePuppeteerLogins = ensurePuppeteerMap(req.app);
+    if (activePuppeteerLogins.has(sessionId)) {
+      return res.status(409).json({ success: false, error: 'Session ID conflict' });
+    }
+
+    // Seed entry
+    activePuppeteerLogins.set(sessionId, {
+      userId,
+      username,
+      status: 'pending',
+      startedAt: Date.now()
+    });
+
+    // Kick off background job (do not await)
+    startBackgroundPuppeteerLogin({ app: req.app, sessionId, userId, username });
+
+    // Manual control URL if configured (VNC, etc.)
+    const manualControlUrlBase = process.env.NOVNC_BASE_URL;
+    const manualControlUrl = manualControlUrlBase
+      ? `${manualControlUrlBase}/vnc.html?path=websockify?token=${sessionId}`
+      : undefined;
+
+    res.json({
+      success: true,
+      message: 'Puppeteer login started',
+      sessionId,
+      userId,
+      manualControlUrl
+    });
+  } catch (error) {
+    logger.error(`Failed to start Puppeteer login: ${error.message}`);
+    res.status(500).json({ success: false, error: 'Failed to start Puppeteer login', message: error.message });
+  }
+});
+
+// Add: Poll status
+router.get('/status/:sessionId', async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const activePuppeteerLogins = ensurePuppeteerMap(req.app);
+    const entry = activePuppeteerLogins.get(sessionId);
+
+    if (!entry) {
+      return res.status(404).json({ success: false, error: 'Session not found' });
+    }
+
+    const { status, token, user, manualControlUrl, username, userId, error, startedAt } = entry;
+    res.json({ success: true, status, token, user, manualControlUrl, username, userId, error, startedAt });
+  } catch (error) {
+    logger.error(`Failed to get status: ${error.message}`);
+    res.status(500).json({ success: false, error: 'Failed to get status', message: error.message });
+  }
+});
+
+// Add: Cancel session
+router.post('/cancel/:sessionId', async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const activePuppeteerLogins = ensurePuppeteerMap(req.app);
+    const entry = activePuppeteerLogins.get(sessionId);
+
+    if (!entry) {
+      return res.status(404).json({ success: false, error: 'Session not found' });
+    }
+
+    try { if (entry.page && !entry.page.isClosed()) await entry.page.close(); } catch (_) {}
+    try { if (entry.browser) await entry.browser.close(); } catch (_) {}
+
+    activePuppeteerLogins.delete(sessionId);
+    res.json({ success: true, message: 'Session canceled' });
+  } catch (error) {
+    logger.error(`Failed to cancel session: ${error.message}`);
+    res.status(500).json({ success: false, error: 'Failed to cancel session', message: error.message });
+  }
+});
+
 module.exports = router;

@@ -783,6 +783,82 @@ class ProxyApiClient {
     }
   }
 
+  /// Start Puppeteer direct-login (server-side browser)
+  Future<Result<Map<String, dynamic>>> startPuppeteerLogin(
+    String username,
+  ) async {
+    try {
+      if (kDebugMode && EnvironmentConfig.enableLogging) {
+        debugPrint(
+          'ProxyApiClient: Starting Puppeteer login for user: ${username.substring(0, 3)}***',
+        );
+      }
+
+      final response = await _dio.post(
+        '/auth/start-puppeteer-login',
+        data: {'username': username},
+      );
+
+      return _handleResponse<Map<String, dynamic>>(response, null);
+    } on DioException catch (dioError) {
+      return Result.failure(_mapDioError(dioError));
+    } catch (error) {
+      if (kDebugMode && EnvironmentConfig.enableLogging) {
+        debugPrint('ProxyApiClient: Start Puppeteer login error: $error');
+      }
+      return Result.failure(
+        GeneralFailure.unknown('Start Puppeteer login request failed: $error'),
+      );
+    }
+  }
+
+  /// Get Puppeteer login status by sessionId
+  Future<Result<Map<String, dynamic>>> getPuppeteerLoginStatus(
+    String sessionId,
+  ) async {
+    try {
+      if (kDebugMode && EnvironmentConfig.enableLogging) {
+        debugPrint(
+          'ProxyApiClient: Getting Puppeteer login status for sessionId: $sessionId',
+        );
+      }
+
+      final response = await _dio.get('/auth/status/$sessionId');
+
+      return _handleResponse<Map<String, dynamic>>(response, null);
+    } on DioException catch (dioError) {
+      return Result.failure(_mapDioError(dioError));
+    } catch (error) {
+      if (kDebugMode && EnvironmentConfig.enableLogging) {
+        debugPrint('ProxyApiClient: Get Puppeteer status error: $error');
+      }
+      return Result.failure(
+        GeneralFailure.unknown('Get Puppeteer status request failed: $error'),
+      );
+    }
+  }
+
+  /// Cancel Puppeteer login session
+  Future<Result<void>> cancelPuppeteerLogin(String sessionId) async {
+    try {
+      if (kDebugMode && EnvironmentConfig.enableLogging) {
+        debugPrint('ProxyApiClient: Cancel Puppeteer session: $sessionId');
+      }
+
+      await _dio.post('/auth/cancel/$sessionId');
+      return const Result.success(null);
+    } on DioException catch (dioError) {
+      return Result.failure(_mapDioError(dioError));
+    } catch (error) {
+      if (kDebugMode && EnvironmentConfig.enableLogging) {
+        debugPrint('ProxyApiClient: Cancel Puppeteer session error: $error');
+      }
+      return Result.failure(
+        GeneralFailure.unknown('Cancel Puppeteer session failed: $error'),
+      );
+    }
+  }
+
   void dispose() {
     _dio.close();
   }
