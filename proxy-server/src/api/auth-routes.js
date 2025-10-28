@@ -1397,18 +1397,20 @@ router.post('/start-puppeteer-login', applyAuthRateLimit, [
     // Kick off background job (do not await)
     startBackgroundPuppeteerLogin({ app: req.app, sessionId, userId, username });
 
-    // Manual control URL if configured (VNC, etc.)
+    // Manual control URL if configured (VNC, etc.) and built-in remote UI URL
     const manualControlUrlBase = process.env.NOVNC_BASE_URL;
     const manualControlUrl = manualControlUrlBase
       ? `${manualControlUrlBase}/vnc.html?path=websockify?token=${sessionId}`
       : undefined;
+    const remoteControlUrl = `${req.protocol}://${req.get('host')}/api/auth/remote/${sessionId}`;
 
     res.json({
       success: true,
       message: 'Puppeteer login started',
       sessionId,
       userId,
-      manualControlUrl
+      manualControlUrl,
+      remoteControlUrl,
     });
   } catch (error) {
     logger.error(`Failed to start Puppeteer login: ${error.message}`);
@@ -1416,7 +1418,158 @@ router.post('/start-puppeteer-login', applyAuthRateLimit, [
   }
 });
 
-// Add: Poll status
+// Add: Remote control lightweight UI (HTML)
+router.get('/remote/:sessionId', async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const activePuppeteerLogins = ensurePuppeteerMap(req.app);
+    const entry = activePuppeteerLogins.get(sessionId);
+
+    if (!entry) {
+      return res.status(404).send('<h3>Session not found or expired</h3>');
+    }
+
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>K-LMS Remote Login</title>
+<style>
+  body{margin:0;background:#111;color:#eee;font-family:system-ui,-apple-system,Segoe UI,Roboto}
+  #wrap{max-width:900px;margin:0 auto;padding:8px}
+  #screen{width:100%;height:auto;border:1px solid #333;border-radius:6px;background:#000}
+  #hint{font-size:14px;opacity:.8;margin:8px 0}
+  #keys{display:flex;gap:8px;margin:8px 0}
+  button{padding:10px 14px;border-radius:6px;border:0;background:#2c64f1;color:#fff}
+  input[type=text]{flex:1;padding:10px;border-radius:6px;border:1px solid #444;background:#1b1b1b;color:#fff}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="hint">画面をタップして操作、テキスト入力は下の欄から送信できます。</div>
+  <img id="screen" src="/api/auth/remote/${sessionId}/screen?ts=${Date.now()}" alt="screen" />
+  <div id="keys">
+    <input id="text" type="text" placeholder="テキストを入力して送信" />
+    <button id="send">送信</button>
+    <button id="reload">再読込</button>
+  </div>
+</div>
+<script>
+  const img = document.getElementById('screen');
+  const text = document.getElementById('text');
+  const send = document.getElementById('send');
+  const reloadBtn = document.getElementById('reload');
+  let lastW = 900, lastH = 600;
+
+  function refresh() {
+    img.src = `/api/auth/remote/${sessionId}/screen?ts=${Date.now()}`;
+  }
+  const sessionId = '${sessionId}';
+  setInterval(refresh, 700);
+  img.addEventListener('click', (e) => {
+    const rect = img.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width;
+    const y = (e.clientY - rect.top) / rect.height;
+    fetch(`/api/auth/remote/${sessionId}/input`,{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({type:'click', x, y})
+    });
+  });
+  send.addEventListener('click', ()=>{
+    if(!text.value) return;
+    fetch(`/api/auth/remote/${sessionId}/input`,{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({type:'text', value: text.value})
+    }).then(()=>{ text.value=''; });
+  });
+  reloadBtn.addEventListener('click', ()=>{
+    fetch(`/api/auth/remote/${sessionId}/input`,{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({type:'reload'})
+    });
+  });
+</script>
+</body>
+</html>`;
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    return res.send(html);
+  } catch (error) {
+    logger.error(`Remote UI error: ${error.message}`);
+    res.status(500).send('Internal server error');
+  }
+});
+
+// Add: Screenshot endpoint (PNG)
+router.get('/remote/:sessionId/screen', async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const activePuppeteerLogins = ensurePuppeteerMap(req.app);
+    const entry = activePuppeteerLogins.get(sessionId);
+
+    if (!entry || !entry.page) {
+      return res.status(404).end();
+    }
+
+    try {
+      const buf = await entry.page.screenshot({ type: 'png', fullPage: false });
+      res.setHeader('Content-Type', 'image/png');
+      return res.send(buf);
+    } catch (e) {
+      logger.warn(`Screenshot error for ${sessionId}: ${e.message}`);
+      return res.status(503).end();
+    }
+  } catch (error) {
+    logger.error(`Remote screen error: ${error.message}`);
+    res.status(500).end();
+  }
+});
+
+// Add: Input relay (click/text/reload)
+router.post('/remote/:sessionId/input', async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const activePuppeteerLogins = ensurePuppeteerMap(req.app);
+    const entry = activePuppeteerLogins.get(sessionId);
+    if (!entry || !entry.page) {
+      return res.status(404).json({ success: false, error: 'Session not found' });
+    }
+
+    const body = req.body || {};
+    const type = body.type;
+
+    if (type === 'click') {
+      const xRatio = Number(body.x);
+      const yRatio = Number(body.y);
+      const vp = entry.page.viewport() || { width: 1280, height: 720 };
+      const x = Math.max(0, Math.min(vp.width - 1, Math.floor(xRatio * vp.width)));
+      const y = Math.max(0, Math.min(vp.height - 1, Math.floor(yRatio * vp.height)));
+      await entry.page.mouse.click(x, y, { delay: 10 });
+      return res.json({ success: true });
+    }
+
+    if (type === 'text') {
+      const value = String(body.value || '');
+      await entry.page.keyboard.type(value, { delay: 20 });
+      return res.json({ success: true });
+    }
+
+    if (type === 'reload') {
+      await entry.page.reload({ waitUntil: 'domcontentloaded' });
+      return res.json({ success: true });
+    }
+
+    return res.status(400).json({ success: false, error: 'Unsupported input type' });
+  } catch (error) {
+    logger.error(`Remote input error: ${error.message}`);
+    res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
+/**
+ * GET /api/auth/status/:sessionId
+ * Poll status of a Puppeteer direct-login session
+ */
 router.get('/status/:sessionId', async (req, res) => {
   try {
     const { sessionId } = req.params;
@@ -1435,7 +1588,10 @@ router.get('/status/:sessionId', async (req, res) => {
   }
 });
 
-// Add: Cancel session
+/**
+ * POST /api/auth/cancel/:sessionId
+ * Cancel a Puppeteer direct-login session
+ */
 router.post('/cancel/:sessionId', async (req, res) => {
   try {
     const { sessionId } = req.params;

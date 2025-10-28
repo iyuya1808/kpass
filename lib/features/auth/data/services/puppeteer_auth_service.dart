@@ -5,6 +5,7 @@ import 'package:kpass/core/services/proxy_api_client.dart';
 import 'package:kpass/core/services/secure_storage_service.dart';
 import 'package:kpass/features/auth/data/models/user_model.dart';
 import 'package:kpass/features/auth/domain/entities/auth_result.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class PuppeteerAuthService {
   final ProxyApiClient _apiClient;
@@ -43,10 +44,11 @@ class PuppeteerAuthService {
 
       final sessionId = data['sessionId'] as String?;
       final manualControlUrl = data['manualControlUrl'] as String?;
+      final remoteControlUrl = data['remoteControlUrl'] as String?;
 
       if (kDebugMode && EnvironmentConfig.enableLogging) {
         debugPrint(
-          'PuppeteerAuthService: sessionId=$sessionId manualControlUrl=${manualControlUrl ?? 'n/a'}',
+          'PuppeteerAuthService: sessionId=$sessionId manualControlUrl=${manualControlUrl ?? 'n/a'} remoteControlUrl=${remoteControlUrl ?? 'n/a'}',
         );
       }
 
@@ -55,6 +57,18 @@ class PuppeteerAuthService {
           type: AuthResultType.unknown,
           errorMessage: 'Invalid response from server: missing sessionId',
         );
+      }
+
+      // Open remote control URL in external browser (Safari on iOS)
+      if (remoteControlUrl != null && remoteControlUrl.isNotEmpty) {
+        try {
+          final uri = Uri.parse(remoteControlUrl);
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        } catch (e) {
+          if (kDebugMode && EnvironmentConfig.enableLogging) {
+            debugPrint('PuppeteerAuthService: Failed to open remoteControlUrl: $e');
+          }
+        }
       }
 
       // Poll status
@@ -216,9 +230,9 @@ class PuppeteerAuthService {
             r.isSuccess
                 ? const AuthResult.success(user: null, token: null)
                 : AuthResult.failure(
-                  type: AuthResultType.unknown,
-                  errorMessage: r.failureOrNull?.message ?? 'Proxy unreachable',
-                ),
+                    type: AuthResultType.unknown,
+                    errorMessage: r.failureOrNull?.message ?? 'Proxy unreachable',
+                  ),
       );
 
   void dispose() {}
