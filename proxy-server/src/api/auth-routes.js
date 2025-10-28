@@ -7,6 +7,12 @@ const logger = require('../utils/logger');
 
 const router = express.Router();
 
+// Debug: trace auth router hits (temporary; safe)
+router.use((req, res, next) => {
+  try { logger.info(`AuthRouter hit: ${req.method} ${req.originalUrl} path=${req.path}`); } catch (_) {}
+  next();
+});
+
 /**
  * GET /api/health
  * Health check endpoint
@@ -1619,5 +1625,146 @@ router.post('/cancel/:sessionId', async (req, res) => {
     res.status(500).json({ success: false, error: 'Failed to cancel session', message: error.message });
   }
 });
+
+// Credentials login placed early to avoid any route fall-through
+router.post('/credentials-login', applyAuthRateLimit, [
+  body('username')
+    .notEmpty()
+    .withMessage('Username is required')
+    .isLength({ min: 3, max: 100 })
+    .withMessage('Username length invalid')
+    .customSanitizer(sanitizeInput),
+  body('password')
+    .notEmpty()
+    .withMessage('Password is required')
+    .isLength({ min: 3, max: 200 })
+    .withMessage('Password length invalid')
+], async (req, res) => {
+  let username = '';
+  let password = '';
+  let browser = null;
+  let page = null;
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ success: false, error: 'Validation failed', details: errors.array() });
+    }
+
+    username = String(req.body.username || '');
+    password = String(req.body.password || '');
+
+    const maskedUser = `${username.substring(0, 3)}***`;
+    logger.info(`Starting credentials login for user: ${maskedUser}`);
+
+    // Launch server-side browser
+    const userId = `user_${username}`;
+    const started = await launchManualLoginBrowser(userId);
+    browser = started.browser;
+    page = started.page;
+
+    const baseUrl = process.env.CANVAS_BASE_URL || 'https://lms.keio.jp';
+
+    // Ensure on K-LMS portal/login
+    try {
+      await page.goto(`${baseUrl}/portal.html`, { waitUntil: 'networkidle2', timeout: 60000 });
+    } catch (_) {
+      await page.goto(`${baseUrl}/login`, { waitUntil: 'networkidle2', timeout: 60000 });
+    }
+
+    // Navigate into IdP if needed (try to click keio.jp link if present)
+    try {
+      const keioLink = await page.$x("//a[contains(translate(text(),'KEIO.JP','keio.jp'),'keio.jp')]");
+      if (keioLink && keioLink.length > 0) {
+        await keioLink[0].click();
+        await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 }).catch(() => {});
+      }
+    } catch (_) {}
+
+    // Try to locate username/password inputs generically
+    const userSelectors = [
+      'input[type="email"]',
+      'input[name="username"]',
+      'input[id*="user" i]',
+      'input[name="user"]',
+      'input[type="text"]'
+    ];
+    const passSelectors = [
+      'input[type="password"]',
+      'input[name*="pass" i]',
+      'input[id*="pass" i]'
+    ];
+
+    // Username
+    let userInput = null;
+    for (const sel of userSelectors) { userInput = await page.$(sel); if (userInput) break; }
+    if (!userInput) throw new Error('Username field not found');
+    await userInput.click({ delay: 20 });
+    await page.keyboard.down('Control').catch(() => {});
+    await page.keyboard.press('A').catch(() => {});
+    await page.keyboard.up('Control').catch(() => {});
+    await page.keyboard.type(username, { delay: 20 });
+
+    // Password
+    let passInput = null;
+    for (const sel of passSelectors) { passInput = await page.$(sel); if (passInput) break; }
+    if (!passInput) throw new Error('Password field not found');
+    await passInput.click({ delay: 20 });
+    await page.keyboard.type(password, { delay: 18 });
+
+    // Submit
+    let submitted = false;
+    try {
+      const submitBtn = await page.$('button[type="submit"], input[type="submit"], button');
+      if (submitBtn) { await submitBtn.click({ delay: 20 }); submitted = true; }
+    } catch (_) {}
+    if (!submitted) { await page.keyboard.press('Enter'); }
+
+    // SAML wait (3 min)
+    await page.waitForFunction(() => {
+      const url = window.location.href;
+      return url.includes('lms.keio.jp') && !url.includes('/login') && !url.includes('/portal') && !url.includes('okta.com') && !url.includes('/saml') && !url.includes('/auth');
+    }, { timeout: 180000 });
+
+    await new Promise(r => setTimeout(r, 5000));
+
+    // Cookies
+    const cookies = await page.cookies('https://lms.keio.jp');
+    if (!cookies || cookies.length === 0) throw new Error('No cookies found after login');
+    const cookieString = cookies.map(c => `${c.name}=${c.value}`).join('; ');
+
+    // Validate
+    const endpoints = ['/api/v1/users/self', '/api/v1/courses', '/dashboard'];
+    let userData = null; let ok = false;
+    for (const ep of endpoints) {
+      try {
+        const resp = await fetch(`${baseUrl}${ep}`, { method: 'GET', headers: { 'Cookie': cookieString, 'Accept': 'application/json', 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' }, timeout: 10000 });
+        logger.info(`Canvas API validation response for ${ep}: ${resp.status} ${resp.statusText}`);
+        if (resp.ok) { if (ep === '/api/v1/users/self') { try { userData = await resp.json(); } catch(_){} } ok = true; break; }
+      } catch(e) { logger.warn(`Validation error for ${ep}: ${e.message}`); }
+    }
+    if (!ok) throw new Error('All cookie validation attempts failed');
+
+    // Session & token
+    sessionManager.addSession(userId, { cookies: cookieString, username, loginMethod: 'credentials', userInfo: userData || undefined });
+    const token = generateToken({ userId, username });
+
+    // Cleanup & zeroize
+    try { await page.close(); } catch(_) {}
+    try { await browser.close(); } catch(_) {}
+    password = ''.padEnd(password.length, '\\0');
+
+    return res.json({ success: true, token, user: { id: userData?.id || 1, name: userData?.name || username, username, loginMethod: 'credentials', email: userData?.email || username, avatar_url: userData?.avatar_url } });
+  } catch (error) {
+    const maskedUser = username ? `${username.substring(0, 3)}***` : '***';
+    logger.error(`Credentials login failed for user ${maskedUser}: ${error.message}`);
+    try { if (page) await page.close(); } catch(_) {}
+    try { if (browser) await browser.close(); } catch(_) {}
+    if (password) password = ''.padEnd(password.length, '\\0');
+    return res.status(400).json({ success: false, error: 'Credentials login failed', message: 'アプリ内で失敗しました。もう一度お試しください。' });
+  }
+});
+
+// (Disabled old duplicate route to avoid conflicts)
+router.post('/__disabled_credentials_login', (req, res) => res.status(404).json({ success:false, error:'Disabled' }));
 
 module.exports = router;
