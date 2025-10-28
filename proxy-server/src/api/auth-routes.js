@@ -26,18 +26,20 @@ router.get('/health', (req, res) => {
 });
 
 // Create rate limiter instance at module level (not in request handler)
+const authWindowMs = parseInt(process.env.AUTH_RATE_LIMIT_WINDOW_MS || `${15 * 60 * 1000}`); // default 15min
+const authMax = parseInt(process.env.AUTH_RATE_LIMIT_MAX || (process.env.NODE_ENV === 'production' ? '50' : '1000'));
 const authRateLimit = createRateLimiter({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: process.env.NODE_ENV === 'production' ? 5 : 50, // More lenient in non-production
+  windowMs: authWindowMs,
+  max: authMax, // configurable (prod default 50)
   message: {
     success: false,
     error: 'Too many authentication attempts, please try again later.',
-    retryAfter: 900
+    retryAfter: Math.ceil(authWindowMs / 1000)
   },
   standardHeaders: true, // Return rate limit info in headers
   legacyHeaders: false,
   handler: (req, res) => {
-    const retryAfter = Math.ceil((15 * 60 * 1000) / 1000); // 15 minutes in seconds
+    const retryAfter = Math.ceil(authWindowMs / 1000);
     res.status(429).json({
       success: false,
       error: 'Too Many Requests',
