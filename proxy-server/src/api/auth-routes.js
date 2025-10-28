@@ -1676,6 +1676,7 @@ router.post('/credentials-login', applyAuthRateLimit, [
   let page = null;
   const locks = ensureCredsLockMap(req.app);
   let lockKey = '';
+  let progressKey = '';
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -1685,30 +1686,22 @@ router.post('/credentials-login', applyAuthRateLimit, [
     username = String(req.body.username || '');
     password = String(req.body.password || '');
     lockKey = username.toLowerCase();
+    progressKey = `cred:${username}`;
 
     // Single-flight per user
     if (locks.get(lockKey) === true) {
       // eslint-disable-next-line no-console
       console.log(`[trace] credentials-login in progress; user=${username.substring(0,3)}***`);
+      setCredProgress(progressKey, 'in_progress', 'ログイン進行中');
       return res.status(202).json({ success: false, inProgress: true, message: 'Login already in progress' });
     }
     locks.set(lockKey, true);
 
-    const normUser = (username || '').toString().trim().toLowerCase();
-    const maskedUser = `${normUser.substring(0, 3)}***`;
-    const progressKey = `cred:${normUser}`;
+    const maskedUser = `${username.substring(0, 3)}***`;
     logger.info(`Starting credentials login for user: ${maskedUser}`);
     // eslint-disable-next-line no-console
     console.log(`[trace] credentials-login start user=${maskedUser}`);
-    setCredProgress(progressKey, 'start', 'ログイン開始');
-
-    // single-flight guard
-    if (locks.get(lockKey) === true) {
-      // eslint-disable-next-line no-console
-      console.log(`[trace] credentials-login in progress; user=${username.substring(0,3)}***`);
-      return res.status(202).json({ success: false, inProgress: true, message: 'Login already in progress' });
-    }
-    locks.set(lockKey, true);
+    setCredProgress(progressKey, 'start', 'ログインを開始しています…');
 
     // Launch server-side browser
     const userId = `user_${username}`;
@@ -1720,6 +1713,7 @@ router.post('/credentials-login', applyAuthRateLimit, [
 
     // Go directly to SAML entry (faster: domcontentloaded, 8s timeout)
     const t0 = Date.now();
+    setCredProgress(progressKey, 'navigate', '/login/saml にアクセス');
     try {
       await page.goto(`${baseUrl}/login/saml`, { waitUntil: 'domcontentloaded', timeout: 8000 });
     } catch (_) {
@@ -1793,40 +1787,48 @@ router.post('/credentials-login', applyAuthRateLimit, [
 
     // Username
     console.log('[trace] waiting username field');
+    setCredProgress(progressKey, 'username_wait', 'ユーザー名入力欄を待機');
     // Wait until Okta page is active or username field appears (short)
     await page.waitForFunction(() => /okta\.com|keio\.okta\.com/.test(location.hostname) || document.querySelector('input[name="identifier"],#okta-signin-username,input[type="email"],input[name="username"]'), { timeout: 2000 }).catch(()=>{});
     let userInput = await waitInFrames(page, usernameSelectors, 2000);
     if (!userInput) userInput = await page.$(usernameSelectors[0]);
     if (!userInput) throw new Error('Username field not found');
+    setCredProgress(progressKey, 'username_input', 'ユーザー名を入力中');
     await userInput.click({ delay: 20 });
     await page.keyboard.type(username, { delay: 20 });
 
     // Next (if any)
     console.log('[trace] clicking next (if present)');
+    setCredProgress(progressKey, 'next', '次へをクリック');
     await clickInFrames(page, nextButtonSelectors, 2000).catch(()=>{});
     // Do not block on long navigation; give it up to 800ms then proceed to poll fields
     await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 800 }).catch(()=>{});
 
     // Password
     console.log('[trace] waiting password field');
+    setCredProgress(progressKey, 'password_wait', 'パスワード入力欄を待機');
     let passInput = await waitInFrames(page, passwordSelectors, 2000);
     if (!passInput) passInput = await page.$(passwordSelectors[0]);
     if (!passInput) throw new Error('Password field not found');
+    setCredProgress(progressKey, 'password_input', 'パスワードを入力中');
     await passInput.click({ delay: 20 });
     await page.keyboard.type(password, { delay: 18 });
 
     // Sign in
     console.log('[trace] clicking sign-in/submit');
+    setCredProgress(progressKey, 'submit', 'サインイン送信中');
     const clicked = await clickInFrames(page, signInButtonSelectors, 2000);
     if (!clicked) { await page.keyboard.press('Enter'); }
 
     // If MFA is required, fail fast (仕様によりフォールバックなし)
     const mfaFound = await findInFrames(page, mfaIndicators);
     if (mfaFound) {
+      setCredProgress(progressKey, 'mfa', '多要素認証が必要です');
       throw new Error('MFA required');
     }
 
     console.log('[trace] submitted; waiting SAML completion');
+    setCredProgress(progressKey, 'saml_wait', '認証を確定しています…');
 
     // SAML wait (3 min)
     await page.waitForFunction(() => {
@@ -1848,6 +1850,7 @@ router.post('/credentials-login', applyAuthRateLimit, [
     const cookieString = cookies.map(c => `${c.name}=${c.value}`).join('; ');
 
     // Validate
+    setCredProgress(progressKey, 'validating', 'ログイン検証中');
     const endpoints = ['/api/v1/users/self', '/api/v1/courses', '/dashboard'];
     let userData = null; let ok = false;
     for (const ep of endpoints) {
@@ -1869,26 +1872,29 @@ router.post('/credentials-login', applyAuthRateLimit, [
     try { await browser.close(); } catch(_) {}
     password = ''.padEnd(password.length, '\\0');
 
+    setCredProgress(progressKey, 'success', 'ログイン成功');
+
     return res.json({ success: true, token, user: { id: userData?.id || 1, name: userData?.name || username, username, loginMethod: 'credentials', email: userData?.email || username, avatar_url: userData?.avatar_url } });
   } catch (error) {
     const maskedUser = username ? `${username.substring(0, 3)}***` : '***';
     logger.error(`Credentials login failed for user ${maskedUser}: ${error.message}`);
     console.log(`[trace] credentials-login failed user=${maskedUser} reason=${error.message}`);
-    setCredProgress(progressKey, 'failed', error.message || '失敗');
     try { if (page) await page.close(); } catch(_) {}
     try { if (browser) await browser.close(); } catch(_) {}
     if (password) password = ''.padEnd(password.length, '\\0');
+    if (progressKey) setCredProgress(progressKey, 'failed', error.message || '失敗');
     return res.status(400).json({ success: false, error: 'Credentials login failed', message: 'アプリ内で失敗しました。もう一度お試しください。' });
   } finally {
     if (lockKey) locks.delete(lockKey);
+    if (progressKey) setTimeout(() => clearCredProgress(progressKey), 10000);
   }
 });
 
 // Progress endpoint (GET)
 router.get('/credentials-login/status', (req, res) => {
-  const username = (req.query.username || '').toString().trim().toLowerCase();
+  const username = (req.query.username || '').toString();
   if (!username) return res.status(400).json({ success: false, error: 'username required' });
-  const progress = getCredProgress(`cred:${username}`) || { step: 'in_progress', detail: 'ログイン進行中', updatedAt: Date.now() };
+  const progress = getCredProgress(`cred:${username}`);
   return res.json({ success: true, progress });
 });
 
