@@ -1691,6 +1691,21 @@ router.post('/credentials-login', applyAuthRateLimit, [
 
     const baseUrl = process.env.CANVAS_BASE_URL || 'https://lms.keio.jp';
 
+    // Speed-ups: reduce default waits and block heavy resources during auth
+    try {
+      await page.setDefaultNavigationTimeout(8000);
+      await page.setDefaultTimeout(2000);
+      await page.setCacheEnabled(false);
+      await page.setRequestInterception(true);
+      page.on('request', (req) => {
+        const type = req.resourceType();
+        if (type === 'image' || type === 'media' || type === 'font') {
+          return req.abort();
+        }
+        return req.continue();
+      });
+    } catch (_) {}
+
     // Go directly to SAML entry (faster: domcontentloaded, 8s timeout)
     const t0 = Date.now();
     try {
