@@ -1694,10 +1694,21 @@ router.post('/credentials-login', applyAuthRateLimit, [
     }
     locks.set(lockKey, true);
 
-    const maskedUser = `${username.substring(0, 3)}***`;
+    const normUser = (username || '').toString().trim().toLowerCase();
+    const maskedUser = `${normUser.substring(0, 3)}***`;
+    const progressKey = `cred:${normUser}`;
     logger.info(`Starting credentials login for user: ${maskedUser}`);
     // eslint-disable-next-line no-console
     console.log(`[trace] credentials-login start user=${maskedUser}`);
+    setCredProgress(progressKey, 'start', 'ログイン開始');
+
+    // single-flight guard
+    if (locks.get(lockKey) === true) {
+      // eslint-disable-next-line no-console
+      console.log(`[trace] credentials-login in progress; user=${username.substring(0,3)}***`);
+      return res.status(202).json({ success: false, inProgress: true, message: 'Login already in progress' });
+    }
+    locks.set(lockKey, true);
 
     // Launch server-side browser
     const userId = `user_${username}`;
@@ -1863,6 +1874,7 @@ router.post('/credentials-login', applyAuthRateLimit, [
     const maskedUser = username ? `${username.substring(0, 3)}***` : '***';
     logger.error(`Credentials login failed for user ${maskedUser}: ${error.message}`);
     console.log(`[trace] credentials-login failed user=${maskedUser} reason=${error.message}`);
+    setCredProgress(progressKey, 'failed', error.message || '失敗');
     try { if (page) await page.close(); } catch(_) {}
     try { if (browser) await browser.close(); } catch(_) {}
     if (password) password = ''.padEnd(password.length, '\\0');
@@ -1874,9 +1886,9 @@ router.post('/credentials-login', applyAuthRateLimit, [
 
 // Progress endpoint (GET)
 router.get('/credentials-login/status', (req, res) => {
-  const username = (req.query.username || '').toString();
+  const username = (req.query.username || '').toString().trim().toLowerCase();
   if (!username) return res.status(400).json({ success: false, error: 'username required' });
-  const progress = getCredProgress(`cred:${username}`);
+  const progress = getCredProgress(`cred:${username}`) || { step: 'in_progress', detail: 'ログイン進行中', updatedAt: Date.now() };
   return res.json({ success: true, progress });
 });
 

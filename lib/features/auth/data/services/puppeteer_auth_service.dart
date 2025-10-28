@@ -226,53 +226,89 @@ class PuppeteerAuthService {
     );
   }
 
+  /// Authenticate with username/password using server-side Puppeteer.
   Future<AuthResult> authenticateWithCredentials(
     String username,
-    String password,
-  ) async {
+    String password, {
+    void Function(String step, String? detail)? onProgress,
+  }) async {
     try {
-      if (kDebugMode && EnvironmentConfig.enableVerboseLogging) {
-        debugPrint(
-          'PuppeteerAuthService: credentials login start for ${username.substring(0, 3)}***',
-        );
+      // Start progress polling while waiting for completion/inProgress states
+      final pollStop = ValueNotifier<bool>(false);
+      // Emit initial progress immediately for UI feedback
+      if (onProgress != null) {
+        onProgress('start', 'ログインを開始しています…');
       }
-      final resp = await _apiClient.credentialsLogin(username, password);
-      if (resp.isFailure) {
+      Future<void> poll() async {
+        while (!pollStop.value) {
+          final pr = await _apiClient.getCredentialsLoginStatus(username);
+          if (pr.isSuccess) {
+            final data = pr.valueOrNull;
+            if (data != null && onProgress != null) {
+              onProgress(
+                data['step']?.toString() ?? '',
+                data['detail']?.toString(),
+              );
+              if (data['step'] == 'success' || data['step'] == 'failed') {
+                pollStop.value = true;
+              }
+            }
+          }
+          await Future.delayed(const Duration(milliseconds: 400));
+        }
+      }
+
+      // Fire-and-forget
+      unawaited(poll());
+
+      // Send credentials request while polling is active
+      final result = await _apiClient.credentialsLogin(username, password);
+
+      if (result.isSuccess) {
+        // Expect token and user in payload
+        final data = result.valueOrNull ?? const <String, dynamic>{};
+        final token = data['token'] as String?;
+        final userMap = data['user'] as Map<String, dynamic>?;
+        if (token == null || userMap == null) {
+          pollStop.value = true;
+          return const AuthResult.failure(
+            type: AuthResultType.unknown,
+            errorMessage: 'Invalid success payload: missing token/user',
+          );
+        }
+        final store = await _secureStorage.storeProxyAuthToken(token);
+        if (store.isFailure) {
+          pollStop.value = true;
+          return AuthResult.failure(
+            type: AuthResultType.unknown,
+            errorMessage: 'Failed to store token',
+          );
+        }
+        await _secureStorage.storeUserData(userMap);
+        final user = UserModel.fromCanvasJson(userMap).toEntity();
+        pollStop.value = true;
+        return AuthResult.success(user: user, token: token);
+      } else {
+        pollStop.value = true;
+        final message =
+            result.failureOrNull?.message ?? 'Credentials login failed';
+        if (kDebugMode) {
+          debugPrint(
+            'PuppeteerAuthService: credentials login failed: $message',
+          );
+        }
         return AuthResult.failure(
           type: AuthResultType.unknown,
-          errorMessage:
-              resp.failureOrNull?.message ?? 'アプリ内で失敗しました。もう一度お試しください。',
+          errorMessage: message,
         );
       }
-      final data = resp.valueOrNull;
-      if (data == null) {
-        return const AuthResult.failure(
-          type: AuthResultType.unknown,
-          errorMessage: 'Invalid response',
-        );
-      }
-      final token = data['token'] as String?;
-      final userMap = data['user'] as Map<String, dynamic>?;
-      if (token == null || userMap == null) {
-        return const AuthResult.failure(
-          type: AuthResultType.unknown,
-          errorMessage: 'Invalid response payload',
-        );
-      }
-      final store = await _secureStorage.storeProxyAuthToken(token);
-      if (store.isFailure) {
-        return const AuthResult.failure(
-          type: AuthResultType.unknown,
-          errorMessage: 'Failed to store token',
-        );
-      }
-      await _secureStorage.storeUserData(userMap);
-      final user = UserModel.fromCanvasJson(userMap).toEntity();
-      return AuthResult.success(user: user, token: token);
     } catch (e) {
+      if (kDebugMode) {
+        debugPrint('PuppeteerAuthService: credentials login exception: $e');
+      }
       return AuthResult.failure(
         type: AuthResultType.unknown,
-        errorMessage: 'アプリ内で失敗しました。もう一度お試しください。',
+        errorMessage: 'Credentials login request failed: $e',
       );
     }
   }
