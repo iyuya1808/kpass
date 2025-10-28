@@ -1691,21 +1691,6 @@ router.post('/credentials-login', applyAuthRateLimit, [
 
     const baseUrl = process.env.CANVAS_BASE_URL || 'https://lms.keio.jp';
 
-    // Speed-ups: reduce default waits and block heavy resources during auth
-    try {
-      await page.setDefaultNavigationTimeout(8000);
-      await page.setDefaultTimeout(2000);
-      await page.setCacheEnabled(false);
-      await page.setRequestInterception(true);
-      page.on('request', (req) => {
-        const type = req.resourceType();
-        if (type === 'image' || type === 'media' || type === 'font') {
-          return req.abort();
-        }
-        return req.continue();
-      });
-    } catch (_) {}
-
     // Go directly to SAML entry (faster: domcontentloaded, 8s timeout)
     const t0 = Date.now();
     try {
@@ -1738,18 +1723,18 @@ router.post('/credentials-login', applyAuthRateLimit, [
       return null;
     }
     async function waitInFrames(pageRef, selectors, timeoutMs = 30000) {
-      // Adjusted default to ~1s per spec
+      // Adjusted default to ~2s per spec
       const start = Date.now();
-      const deadline = 1000;
+      const deadline = 2000;
       while (Date.now() - start < deadline) {
         const h = await findInFrames(pageRef, selectors);
         if (h) return h;
-        await new Promise(r => setTimeout(r, 100));
+        await new Promise(r => setTimeout(r, 150));
       }
       return null;
     }
     async function clickInFrames(pageRef, selectors, timeoutMs = 8000) {
-      const h = await waitInFrames(pageRef, selectors, 1000);
+      const h = await waitInFrames(pageRef, selectors, 2000);
       if (h) { await h.click({ delay: 20 }); return true; }
       return false;
     }
@@ -1782,8 +1767,8 @@ router.post('/credentials-login', applyAuthRateLimit, [
     // Username
     console.log('[trace] waiting username field');
     // Wait until Okta page is active or username field appears (short)
-    await page.waitForFunction(() => /okta\.com|keio\.okta\.com/.test(location.hostname) || document.querySelector('input[name="identifier"],#okta-signin-username,input[type="email"],input[name="username"]'), { timeout: 5000 }).catch(()=>{});
-    let userInput = await waitInFrames(page, usernameSelectors, 1000);
+    await page.waitForFunction(() => /okta\.com|keio\.okta\.com/.test(location.hostname) || document.querySelector('input[name="identifier"],#okta-signin-username,input[type="email"],input[name="username"]'), { timeout: 2000 }).catch(()=>{});
+    let userInput = await waitInFrames(page, usernameSelectors, 2000);
     if (!userInput) userInput = await page.$(usernameSelectors[0]);
     if (!userInput) throw new Error('Username field not found');
     await userInput.click({ delay: 20 });
@@ -1791,13 +1776,13 @@ router.post('/credentials-login', applyAuthRateLimit, [
 
     // Next (if any)
     console.log('[trace] clicking next (if present)');
-    await clickInFrames(page, nextButtonSelectors, 1000).catch(()=>{});
-    // Do not block on long navigation; give it up to 1s then proceed to poll fields
-    await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 1000 }).catch(()=>{});
+    await clickInFrames(page, nextButtonSelectors, 2000).catch(()=>{});
+    // Do not block on long navigation; give it up to 800ms then proceed to poll fields
+    await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 800 }).catch(()=>{});
 
     // Password
     console.log('[trace] waiting password field');
-    let passInput = await waitInFrames(page, passwordSelectors, 1000);
+    let passInput = await waitInFrames(page, passwordSelectors, 2000);
     if (!passInput) passInput = await page.$(passwordSelectors[0]);
     if (!passInput) throw new Error('Password field not found');
     await passInput.click({ delay: 20 });
@@ -1805,7 +1790,7 @@ router.post('/credentials-login', applyAuthRateLimit, [
 
     // Sign in
     console.log('[trace] clicking sign-in/submit');
-    const clicked = await clickInFrames(page, signInButtonSelectors, 1000);
+    const clicked = await clickInFrames(page, signInButtonSelectors, 2000);
     if (!clicked) { await page.keyboard.press('Enter'); }
 
     // If MFA is required, fail fast (仕様によりフォールバックなし)
@@ -1825,7 +1810,7 @@ router.post('/credentials-login', applyAuthRateLimit, [
         !url.includes('okta.com') && !url.includes('/saml') && !url.includes('/auth');
       const hasSession = document.cookie && /_normandy_session=/.test(document.cookie);
       return onLmsFinal || hasSession;
-    }, { timeout: 1000 });
+    }, { timeout: 2000 });
     // No extra grace sleep; proceed immediately to cookie extraction
 
     // Cookies
@@ -1840,7 +1825,7 @@ router.post('/credentials-login', applyAuthRateLimit, [
     let userData = null; let ok = false;
     for (const ep of endpoints) {
       try {
-        const resp = await fetch(`${baseUrl}${ep}`, { method: 'GET', headers: { 'Cookie': cookieString, 'Accept': 'application/json', 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' }, timeout: 1000 });
+        const resp = await fetch(`${baseUrl}${ep}`, { method: 'GET', headers: { 'Cookie': cookieString, 'Accept': 'application/json', 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' }, timeout: 2000 });
         logger.info(`Canvas API validation response for ${ep}: ${resp.status} ${resp.statusText}`);
         console.log(`[trace] validate ${ep}: ${resp.status}`);
         if (resp.ok) { if (ep === '/api/v1/users/self') { try { userData = await resp.json(); } catch(_){} } ok = true; break; }
