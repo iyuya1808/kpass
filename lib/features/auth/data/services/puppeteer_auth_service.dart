@@ -66,7 +66,9 @@ class PuppeteerAuthService {
           await launchUrl(uri, mode: LaunchMode.externalApplication);
         } catch (e) {
           if (kDebugMode && EnvironmentConfig.enableLogging) {
-            debugPrint('PuppeteerAuthService: Failed to open remoteControlUrl: $e');
+            debugPrint(
+              'PuppeteerAuthService: Failed to open remoteControlUrl: $e',
+            );
           }
         }
       }
@@ -230,9 +232,9 @@ class PuppeteerAuthService {
             r.isSuccess
                 ? const AuthResult.success(user: null, token: null)
                 : AuthResult.failure(
-                    type: AuthResultType.unknown,
-                    errorMessage: r.failureOrNull?.message ?? 'Proxy unreachable',
-                  ),
+                  type: AuthResultType.unknown,
+                  errorMessage: r.failureOrNull?.message ?? 'Proxy unreachable',
+                ),
       );
 
   void dispose() {}

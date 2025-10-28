@@ -1455,39 +1455,46 @@ router.get('/remote/:sessionId', async (req, res) => {
   </div>
 </div>
 <script>
-  const img = document.getElementById('screen');
-  const text = document.getElementById('text');
-  const send = document.getElementById('send');
-  const reloadBtn = document.getElementById('reload');
-  let lastW = 900, lastH = 600;
+  (function(){
+    const img = document.getElementById('screen');
+    const text = document.getElementById('text');
+    const send = document.getElementById('send');
+    const reloadBtn = document.getElementById('reload');
+    const sid = '${sessionId}';
 
-  function refresh() {
-    img.src = `/api/auth/remote/${sessionId}/screen?ts=${Date.now()}`;
-  }
-  const sessionId = '${sessionId}';
-  setInterval(refresh, 700);
-  img.addEventListener('click', (e) => {
-    const rect = img.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / rect.width;
-    const y = (e.clientY - rect.top) / rect.height;
-    fetch(`/api/auth/remote/${sessionId}/input`,{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({type:'click', x, y})
+    function refresh(){
+      img.src = '/api/auth/remote/' + sid + '/screen?ts=' + Date.now();
+    }
+    setInterval(refresh, 700);
+
+    img.addEventListener('click', function(e){
+      const rect = img.getBoundingClientRect();
+      const x = (e.clientX - rect.left) / rect.width;
+      const y = (e.clientY - rect.top) / rect.height;
+      fetch('/api/auth/remote/' + sid + '/input', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ type: 'click', x: x, y: y })
+      }).catch(function(){});
     });
-  });
-  send.addEventListener('click', ()=>{
-    if(!text.value) return;
-    fetch(`/api/auth/remote/${sessionId}/input`,{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({type:'text', value: text.value})
-    }).then(()=>{ text.value=''; });
-  });
-  reloadBtn.addEventListener('click', ()=>{
-    fetch(`/api/auth/remote/${sessionId}/input`,{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({type:'reload'})
+
+    send.addEventListener('click', function(){
+      if(!text.value) return;
+      fetch('/api/auth/remote/' + sid + '/input', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ type: 'text', value: text.value })
+      }).then(function(){ text.value=''; }).catch(function(){});
     });
-  });
+
+    reloadBtn.addEventListener('click', function(){
+      fetch('/api/auth/remote/' + sid + '/input', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ type: 'reload' })
+      }).catch(function(){});
+    });
+  })();
 </script>
 </body>
 </html>`;
