@@ -1674,17 +1674,17 @@ router.post('/credentials-login', applyAuthRateLimit, [
 
     const baseUrl = process.env.CANVAS_BASE_URL || 'https://lms.keio.jp';
 
-    // Ensure on K-LMS portal/login
+    // Go directly to SAML entry
     try {
-      await page.goto(`${baseUrl}/portal.html`, { waitUntil: 'networkidle2', timeout: 60000 });
+      await page.goto(`${baseUrl}/login/saml`, { waitUntil: 'networkidle2', timeout: 60000 });
     } catch (_) {
       await page.goto(`${baseUrl}/login`, { waitUntil: 'networkidle2', timeout: 60000 });
     }
 
     // eslint-disable-next-line no-console
-    console.log('[trace] navigated to portal/login');
+    console.log('[trace] navigated to /login/saml');
 
-    // Navigate into IdP if needed (try to click keio.jp link if present)
+    // If we are still on K-LMS selector page, click keio.jp link
     try {
       const keioLink = await page.$x("//a[contains(translate(text(),'KEIO.JP','keio.jp'),'keio.jp')]");
       if (keioLink && keioLink.length > 0) {
@@ -1693,50 +1693,94 @@ router.post('/credentials-login', applyAuthRateLimit, [
       }
     } catch (_) {}
 
-    // eslint-disable-next-line no-console
-    console.log('[trace] attempting to locate username/password fields');
+    // Helper: wait for any selector
+    async function waitForAny(selectors, timeoutMs = 20000) {
+      const start = Date.now();
+      while (Date.now() - start < timeoutMs) {
+        for (const sel of selectors) {
+          try {
+            const h = await page.$(sel);
+            if (h) return { handle: h, selector: sel };
+          } catch (_) {}
+        }
+        await new Promise(r => setTimeout(r, 250));
+      }
+      return { handle: null, selector: null };
+    }
 
-    // Try to locate username/password inputs generically
-    const userSelectors = [
+    // Username step on Okta (discovery or combined form)
+    // Common selectors: new okta: input[name="identifier"], legacy: #okta-signin-username
+    const usernameSelectors = [
+      'input[name="identifier"]',
+      '#okta-signin-username',
       'input[type="email"]',
       'input[name="username"]',
-      'input[id*="user" i]',
-      'input[name="user"]',
-      'input[type="text"]'
+      'input[id*="user" i]'
     ];
-    const passSelectors = [
+
+    const nextButtonSelectors = [
+      'input[type="submit"]',
+      'button[type="submit"]',
+      'button[data-type="next"]',
+      'input[data-type="next"]',
+      'input[value="Next"]',
+      'button:has-text("Next")'
+    ];
+
+    const passwordSelectors = [
+      'input[name="credentials.passcode"]', // okta new
+      'input[name="password"]',
+      '#okta-signin-password',
       'input[type="password"]',
-      'input[name*="pass" i]',
       'input[id*="pass" i]'
     ];
 
+    const signInButtonSelectors = [
+      'button[data-type="submit"]',
+      'input[data-type="submit"]',
+      'input[type="submit"]',
+      'button[type="submit"]',
+      'button:has-text("Sign in")',
+      'input[value="Sign in"]'
+    ];
+
     // Username
-    let userInput = null;
-    for (const sel of userSelectors) { userInput = await page.$(sel); if (userInput) break; }
-    if (!userInput) throw new Error('Username field not found');
-    await userInput.click({ delay: 20 });
-    await page.keyboard.down('Control').catch(() => {});
-    await page.keyboard.press('A').catch(() => {});
-    await page.keyboard.up('Control').catch(() => {});
+    // eslint-disable-next-line no-console
+    console.log('[trace] waiting username field');
+    const u = await waitForAny(usernameSelectors, 25000);
+    if (!u.handle) throw new Error('Username field not found');
+    await u.handle.click({ delay: 20 });
     await page.keyboard.type(username, { delay: 20 });
 
+    // Click Next if present (discovery flow)
+    // eslint-disable-next-line no-console
+    console.log('[trace] clicking next (if present)');
+    const nextBtn = await waitForAny(nextButtonSelectors, 5000);
+    if (nextBtn.handle) {
+      await nextBtn.handle.click({ delay: 20 }).catch(() => {});
+      await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {});
+    }
+
     // Password
-    let passInput = null;
-    for (const sel of passSelectors) { passInput = await page.$(sel); if (passInput) break; }
-    if (!passInput) throw new Error('Password field not found');
-    await passInput.click({ delay: 20 });
+    // eslint-disable-next-line no-console
+    console.log('[trace] waiting password field');
+    const p = await waitForAny(passwordSelectors, 25000);
+    if (!p.handle) throw new Error('Password field not found');
+    await p.handle.click({ delay: 20 });
     await page.keyboard.type(password, { delay: 18 });
 
-    // Submit
-    let submitted = false;
-    try {
-      const submitBtn = await page.$('button[type="submit"], input[type="submit"], button');
-      if (submitBtn) { await submitBtn.click({ delay: 20 }); submitted = true; }
-    } catch (_) {}
-    if (!submitted) { await page.keyboard.press('Enter'); }
+    // Sign in
+    // eslint-disable-next-line no-console
+    console.log('[trace] clicking sign-in/submit');
+    const signBtn = await waitForAny(signInButtonSelectors, 7000);
+    if (signBtn.handle) {
+      await signBtn.handle.click({ delay: 20 }).catch(() => {});
+    } else {
+      await page.keyboard.press('Enter');
+    }
 
     // eslint-disable-next-line no-console
-    console.log('[trace] submitted credentials; waiting for SAML completion');
+    console.log('[trace] submitted; waiting SAML completion');
 
     // SAML wait (3 min)
     await page.waitForFunction(() => {
