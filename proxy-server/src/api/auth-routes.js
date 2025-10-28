@@ -1803,11 +1803,15 @@ router.post('/credentials-login', applyAuthRateLimit, [
 
     // SAML wait (3 min)
     await page.waitForFunction(() => {
+      // Either final URL is back on LMS without auth paths OR session cookie is present
       const url = window.location.href;
-      return url.includes('lms.keio.jp') && !url.includes('/login') && !url.includes('/portal') && !url.includes('okta.com') && !url.includes('/saml') && !url.includes('/auth');
+      const onLmsFinal = url.includes('lms.keio.jp') &&
+        !url.includes('/login') && !url.includes('/portal') &&
+        !url.includes('okta.com') && !url.includes('/saml') && !url.includes('/auth');
+      const hasSession = document.cookie && /_normandy_session=/.test(document.cookie);
+      return onLmsFinal || hasSession;
     }, { timeout: 30000 });
-
-    await new Promise(r => setTimeout(r, 1000));
+    // No extra grace sleep; proceed immediately to cookie extraction
 
     // Cookies
     const cookies = await page.cookies('https://lms.keio.jp');
@@ -1821,7 +1825,7 @@ router.post('/credentials-login', applyAuthRateLimit, [
     let userData = null; let ok = false;
     for (const ep of endpoints) {
       try {
-        const resp = await fetch(`${baseUrl}${ep}`, { method: 'GET', headers: { 'Cookie': cookieString, 'Accept': 'application/json', 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' }, timeout: 5000 });
+        const resp = await fetch(`${baseUrl}${ep}`, { method: 'GET', headers: { 'Cookie': cookieString, 'Accept': 'application/json', 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' }, timeout: 3000 });
         logger.info(`Canvas API validation response for ${ep}: ${resp.status} ${resp.statusText}`);
         console.log(`[trace] validate ${ep}: ${resp.status}`);
         if (resp.ok) { if (ep === '/api/v1/users/self') { try { userData = await resp.json(); } catch(_){} } ok = true; break; }
