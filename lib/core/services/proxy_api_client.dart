@@ -866,15 +866,14 @@ class ProxyApiClient {
   ) async {
     try {
       if (kDebugMode && EnvironmentConfig.enableLogging) {
-        debugPrint('ProxyApiClient: Credentials login for user: ${username.substring(0, 3)}***');
+        debugPrint(
+          'ProxyApiClient: Credentials login for user: ${username.substring(0, 3)}***',
+        );
       }
 
       final response = await _dio.post(
         '/auth/credentials-login',
-        data: {
-          'username': username,
-          'password': password,
-        },
+        data: {'username': username, 'password': password},
       );
 
       return _handleResponse<Map<String, dynamic>>(response, null);

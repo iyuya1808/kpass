@@ -232,13 +232,16 @@ class PuppeteerAuthService {
   ) async {
     try {
       if (kDebugMode && EnvironmentConfig.enableVerboseLogging) {
-        debugPrint('PuppeteerAuthService: credentials login start for ${username.substring(0, 3)}***');
+        debugPrint(
+          'PuppeteerAuthService: credentials login start for ${username.substring(0, 3)}***',
+        );
       }
       final resp = await _apiClient.credentialsLogin(username, password);
       if (resp.isFailure) {
         return AuthResult.failure(
           type: AuthResultType.unknown,
-          errorMessage: resp.failureOrNull?.message ?? 'アプリ内で失敗しました。もう一度お試しください。',
+          errorMessage:
+              resp.failureOrNull?.message ?? 'アプリ内で失敗しました。もう一度お試しください。',
         );
       }
       final data = resp.valueOrNull;

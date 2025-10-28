@@ -199,13 +199,19 @@ class AuthProvider extends ChangeNotifier {
   }
 
   /// Authenticate with credentials via server-side puppeteer (recommended fallback-free)
-  Future<AuthResult> authenticateWithCredentials(String username, String password) async {
+  Future<AuthResult> authenticateWithCredentials(
+    String username,
+    String password,
+  ) async {
     try {
       _updateState(const AuthState.authenticating());
       if (kDebugMode && EnvironmentConfig.enableVerboseLogging) {
         debugPrint('AuthProvider: credentials authentication');
       }
-      final result = await _authService.authenticateWithCredentials(username, password);
+      final result = await _authService.authenticateWithCredentials(
+        username,
+        password,
+      );
       await _handleAuthResult(result);
       return result;
     } catch (error) {
