@@ -226,6 +226,54 @@ class PuppeteerAuthService {
     );
   }
 
+  Future<AuthResult> authenticateWithCredentials(
+    String username,
+    String password,
+  ) async {
+    try {
+      if (kDebugMode && EnvironmentConfig.enableVerboseLogging) {
+        debugPrint('PuppeteerAuthService: credentials login start for ${username.substring(0, 3)}***');
+      }
+      final resp = await _apiClient.credentialsLogin(username, password);
+      if (resp.isFailure) {
+        return AuthResult.failure(
+          type: AuthResultType.unknown,
+          errorMessage: resp.failureOrNull?.message ?? 'アプリ内で失敗しました。もう一度お試しください。',
+        );
+      }
+      final data = resp.valueOrNull;
+      if (data == null) {
+        return const AuthResult.failure(
+          type: AuthResultType.unknown,
+          errorMessage: 'Invalid response',
+        );
+      }
+      final token = data['token'] as String?;
+      final userMap = data['user'] as Map<String, dynamic>?;
+      if (token == null || userMap == null) {
+        return const AuthResult.failure(
+          type: AuthResultType.unknown,
+          errorMessage: 'Invalid response payload',
+        );
+      }
+      final store = await _secureStorage.storeProxyAuthToken(token);
+      if (store.isFailure) {
+        return const AuthResult.failure(
+          type: AuthResultType.unknown,
+          errorMessage: 'Failed to store token',
+        );
+      }
+      await _secureStorage.storeUserData(userMap);
+      final user = UserModel.fromCanvasJson(userMap).toEntity();
+      return AuthResult.success(user: user, token: token);
+    } catch (e) {
+      return AuthResult.failure(
+        type: AuthResultType.unknown,
+        errorMessage: 'アプリ内で失敗しました。もう一度お試しください。',
+      );
+    }
+  }
+
   Future<AuthResult> checkProxyConnection() =>
       _apiClient.checkProxyConnection().then(
         (r) =>

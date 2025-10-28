@@ -198,36 +198,25 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  /// Authenticate with username and password (Proxy API) - Legacy method
-  Future<AuthResult> authenticateWithCredentials(
-    String username,
-    String password,
-  ) async {
+  /// Authenticate with credentials via server-side puppeteer (recommended fallback-free)
+  Future<AuthResult> authenticateWithCredentials(String username, String password) async {
     try {
       _updateState(const AuthState.authenticating());
-
       if (kDebugMode && EnvironmentConfig.enableVerboseLogging) {
-        debugPrint('AuthProvider: Starting credential authentication');
+        debugPrint('AuthProvider: credentials authentication');
       }
-
-      // Call proxy auth service
-      final result = await _authService.login(username, password);
-
+      final result = await _authService.authenticateWithCredentials(username, password);
       await _handleAuthResult(result);
-
       return result;
     } catch (error) {
       if (kDebugMode && EnvironmentConfig.enableLogging) {
-        debugPrint('AuthProvider: Credential authentication error: $error');
+        debugPrint('AuthProvider: credentials authentication error: $error');
       }
-
       final result = AuthResult.failure(
         type: AuthResultType.unknown,
-        errorMessage: 'Authentication failed: $error',
+        errorMessage: 'アプリ内で失敗しました。もう一度お試しください。',
       );
-      _updateState(
-        AuthState.failed(errorMessage: 'Authentication failed: $error'),
-      );
+      _updateState(AuthState.failed(errorMessage: result.userFriendlyMessage));
       return result;
     }
   }

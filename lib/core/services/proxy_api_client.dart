@@ -859,6 +859,37 @@ class ProxyApiClient {
     }
   }
 
+  /// Credentials login (server-side puppeteer with username/password)
+  Future<Result<Map<String, dynamic>>> credentialsLogin(
+    String username,
+    String password,
+  ) async {
+    try {
+      if (kDebugMode && EnvironmentConfig.enableLogging) {
+        debugPrint('ProxyApiClient: Credentials login for user: ${username.substring(0, 3)}***');
+      }
+
+      final response = await _dio.post(
+        '/auth/credentials-login',
+        data: {
+          'username': username,
+          'password': password,
+        },
+      );
+
+      return _handleResponse<Map<String, dynamic>>(response, null);
+    } on DioException catch (dioError) {
+      return Result.failure(_mapDioError(dioError));
+    } catch (error) {
+      if (kDebugMode && EnvironmentConfig.enableLogging) {
+        debugPrint('ProxyApiClient: Credentials login error: $error');
+      }
+      return Result.failure(
+        GeneralFailure.unknown('Credentials login request failed: $error'),
+      );
+    }
+  }
+
   void dispose() {
     _dio.close();
   }
