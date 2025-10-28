@@ -1721,8 +1721,17 @@ router.post('/credentials-login', applyAuthRateLimit, [
       }
       return null;
     }
-    async function clickInFrames(pageRef, selectors) {
-      const h = await findInFrames(pageRef, selectors);
+    async function waitInFrames(pageRef, selectors, timeoutMs = 30000) {
+      const start = Date.now();
+      while (Date.now() - start < timeoutMs) {
+        const h = await findInFrames(pageRef, selectors);
+        if (h) return h;
+        await new Promise(r => setTimeout(r, 250));
+      }
+      return null;
+    }
+    async function clickInFrames(pageRef, selectors, timeoutMs = 8000) {
+      const h = await waitInFrames(pageRef, selectors, timeoutMs);
       if (h) { await h.click({ delay: 20 }); return true; }
       return false;
     }
@@ -1754,7 +1763,9 @@ router.post('/credentials-login', applyAuthRateLimit, [
 
     // Username
     console.log('[trace] waiting username field');
-    let userInput = await findInFrames(page, usernameSelectors);
+    // Wait until Okta page is active or username field appears
+    await page.waitForFunction(() => /okta\.com|keio\.okta\.com/.test(location.hostname) || document.querySelector('input[name="identifier"],#okta-signin-username,input[type="email"],input[name="username"]'), { timeout: 30000 }).catch(()=>{});
+    let userInput = await waitInFrames(page, usernameSelectors, 30000);
     if (!userInput) userInput = await page.$(usernameSelectors[0]);
     if (!userInput) throw new Error('Username field not found');
     await userInput.click({ delay: 20 });
@@ -1762,12 +1773,12 @@ router.post('/credentials-login', applyAuthRateLimit, [
 
     // Next (if any)
     console.log('[trace] clicking next (if present)');
-    await clickInFrames(page, nextButtonSelectors).catch(()=>{});
+    await clickInFrames(page, nextButtonSelectors, 8000).catch(()=>{});
     await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }).catch(()=>{});
 
     // Password
     console.log('[trace] waiting password field');
-    let passInput = await findInFrames(page, passwordSelectors);
+    let passInput = await waitInFrames(page, passwordSelectors, 30000);
     if (!passInput) passInput = await page.$(passwordSelectors[0]);
     if (!passInput) throw new Error('Password field not found');
     await passInput.click({ delay: 20 });
@@ -1775,7 +1786,7 @@ router.post('/credentials-login', applyAuthRateLimit, [
 
     // Sign in
     console.log('[trace] clicking sign-in/submit');
-    const clicked = await clickInFrames(page, signInButtonSelectors);
+    const clicked = await clickInFrames(page, signInButtonSelectors, 8000);
     if (!clicked) { await page.keyboard.press('Enter'); }
 
     // If MFA is required, fail fast (仕様によりフォールバックなし)
