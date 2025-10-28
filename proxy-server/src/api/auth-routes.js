@@ -1640,6 +1640,22 @@ const ensureCredsLockMap = (app) => {
   return app.locals.credentialsLoginLocks;
 };
 
+// In-memory progress for credentials-login (keyed by username or uuid)
+const credentialsProgress = new Map();
+
+function setCredProgress(key, step, detail) {
+  const now = Date.now();
+  credentialsProgress.set(key, { step, detail, updatedAt: now });
+}
+
+function getCredProgress(key) {
+  return credentialsProgress.get(key) || null;
+}
+
+function clearCredProgress(key) {
+  credentialsProgress.delete(key);
+}
+
 // Credentials login placed early to avoid any route fall-through
 router.post('/credentials-login', applyAuthRateLimit, [
   body('username')
@@ -1854,6 +1870,14 @@ router.post('/credentials-login', applyAuthRateLimit, [
   } finally {
     if (lockKey) locks.delete(lockKey);
   }
+});
+
+// Progress endpoint (GET)
+router.get('/credentials-login/status', (req, res) => {
+  const username = (req.query.username || '').toString();
+  if (!username) return res.status(400).json({ success: false, error: 'username required' });
+  const progress = getCredProgress(`cred:${username}`);
+  return res.json({ success: true, progress });
 });
 
 // (Disabled old duplicate route to avoid conflicts)
