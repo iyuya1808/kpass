@@ -9,7 +9,13 @@ const router = express.Router();
 
 // Debug: trace auth router hits (temporary; safe)
 router.use((req, res, next) => {
-  try { logger.info(`AuthRouter hit: ${req.method} ${req.originalUrl} path=${req.path}`); } catch (_) {}
+  try {
+    const msg = `AuthRouter hit: ${req.method} ${req.originalUrl} path=${req.path}`;
+    logger.info(msg);
+    // Also print to stdout to ensure visibility regardless of logger config
+    // eslint-disable-next-line no-console
+    console.log(msg);
+  } catch (_) {}
   next();
 });
 
@@ -1657,6 +1663,8 @@ router.post('/credentials-login', applyAuthRateLimit, [
 
     const maskedUser = `${username.substring(0, 3)}***`;
     logger.info(`Starting credentials login for user: ${maskedUser}`);
+    // eslint-disable-next-line no-console
+    console.log(`[trace] credentials-login start user=${maskedUser}`);
 
     // Launch server-side browser
     const userId = `user_${username}`;
@@ -1673,6 +1681,9 @@ router.post('/credentials-login', applyAuthRateLimit, [
       await page.goto(`${baseUrl}/login`, { waitUntil: 'networkidle2', timeout: 60000 });
     }
 
+    // eslint-disable-next-line no-console
+    console.log('[trace] navigated to portal/login');
+
     // Navigate into IdP if needed (try to click keio.jp link if present)
     try {
       const keioLink = await page.$x("//a[contains(translate(text(),'KEIO.JP','keio.jp'),'keio.jp')]");
@@ -1681,6 +1692,9 @@ router.post('/credentials-login', applyAuthRateLimit, [
         await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 }).catch(() => {});
       }
     } catch (_) {}
+
+    // eslint-disable-next-line no-console
+    console.log('[trace] attempting to locate username/password fields');
 
     // Try to locate username/password inputs generically
     const userSelectors = [
@@ -1721,6 +1735,9 @@ router.post('/credentials-login', applyAuthRateLimit, [
     } catch (_) {}
     if (!submitted) { await page.keyboard.press('Enter'); }
 
+    // eslint-disable-next-line no-console
+    console.log('[trace] submitted credentials; waiting for SAML completion');
+
     // SAML wait (3 min)
     await page.waitForFunction(() => {
       const url = window.location.href;
@@ -1731,6 +1748,8 @@ router.post('/credentials-login', applyAuthRateLimit, [
 
     // Cookies
     const cookies = await page.cookies('https://lms.keio.jp');
+    // eslint-disable-next-line no-console
+    console.log(`[trace] cookies count=${cookies ? cookies.length : 0}`);
     if (!cookies || cookies.length === 0) throw new Error('No cookies found after login');
     const cookieString = cookies.map(c => `${c.name}=${c.value}`).join('; ');
 
@@ -1741,8 +1760,10 @@ router.post('/credentials-login', applyAuthRateLimit, [
       try {
         const resp = await fetch(`${baseUrl}${ep}`, { method: 'GET', headers: { 'Cookie': cookieString, 'Accept': 'application/json', 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' }, timeout: 10000 });
         logger.info(`Canvas API validation response for ${ep}: ${resp.status} ${resp.statusText}`);
+        // eslint-disable-next-line no-console
+        console.log(`[trace] validate ${ep}: ${resp.status}`);
         if (resp.ok) { if (ep === '/api/v1/users/self') { try { userData = await resp.json(); } catch(_){} } ok = true; break; }
-      } catch(e) { logger.warn(`Validation error for ${ep}: ${e.message}`); }
+      } catch(e) { logger.warn(`Validation error for ${ep}: ${e.message}`); /* eslint-disable-next-line no-console */ console.log(`[trace] validate error ${ep}: ${e.message}`); }
     }
     if (!ok) throw new Error('All cookie validation attempts failed');
 
@@ -1759,6 +1780,8 @@ router.post('/credentials-login', applyAuthRateLimit, [
   } catch (error) {
     const maskedUser = username ? `${username.substring(0, 3)}***` : '***';
     logger.error(`Credentials login failed for user ${maskedUser}: ${error.message}`);
+    // eslint-disable-next-line no-console
+    console.log(`[trace] credentials-login failed user=${maskedUser} reason=${error.message}`);
     try { if (page) await page.close(); } catch(_) {}
     try { if (browser) await browser.close(); } catch(_) {}
     if (password) password = ''.padEnd(password.length, '\\0');
