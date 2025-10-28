@@ -1691,20 +1691,21 @@ router.post('/credentials-login', applyAuthRateLimit, [
 
     const baseUrl = process.env.CANVAS_BASE_URL || 'https://lms.keio.jp';
 
-    // Go directly to SAML entry
+    // Go directly to SAML entry (faster: domcontentloaded, 8s timeout)
+    const t0 = Date.now();
     try {
-      await page.goto(`${baseUrl}/login/saml`, { waitUntil: 'networkidle2', timeout: 60000 });
+      await page.goto(`${baseUrl}/login/saml`, { waitUntil: 'domcontentloaded', timeout: 8000 });
     } catch (_) {
-      await page.goto(`${baseUrl}/login`, { waitUntil: 'networkidle2', timeout: 60000 });
+      await page.goto(`${baseUrl}/login`, { waitUntil: 'domcontentloaded', timeout: 8000 });
     }
-    console.log('[trace] navigated to /login/saml');
+    console.log(`[trace] navigated to /login/saml (+${Date.now()-t0}ms)`);
 
     // If we are still on K-LMS selector page, click keio.jp link
     try {
       const keioLink = await page.$x("//a[contains(translate(text(),'KEIO.JP','keio.jp'),'keio.jp')]");
       if (keioLink && keioLink.length > 0) {
         await keioLink[0].click();
-        await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 }).catch(() => {});
+        await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 5000 }).catch(() => {});
       }
     } catch (_) {}
 
@@ -1765,8 +1766,8 @@ router.post('/credentials-login', applyAuthRateLimit, [
 
     // Username
     console.log('[trace] waiting username field');
-    // Wait until Okta page is active or username field appears
-    await page.waitForFunction(() => /okta\.com|keio\.okta\.com/.test(location.hostname) || document.querySelector('input[name="identifier"],#okta-signin-username,input[type="email"],input[name="username"]'), { timeout: 30000 }).catch(()=>{});
+    // Wait until Okta page is active or username field appears (short)
+    await page.waitForFunction(() => /okta\.com|keio\.okta\.com/.test(location.hostname) || document.querySelector('input[name="identifier"],#okta-signin-username,input[type="email"],input[name="username"]'), { timeout: 5000 }).catch(()=>{});
     let userInput = await waitInFrames(page, usernameSelectors, 3000);
     if (!userInput) userInput = await page.$(usernameSelectors[0]);
     if (!userInput) throw new Error('Username field not found');
@@ -1776,7 +1777,7 @@ router.post('/credentials-login', applyAuthRateLimit, [
     // Next (if any)
     console.log('[trace] clicking next (if present)');
     await clickInFrames(page, nextButtonSelectors, 3000).catch(()=>{});
-    // Do not block on long navigation; give it up to 5s then proceed to poll fields
+    // Do not block on long navigation; give it up to 1s then proceed to poll fields
     await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 1000 }).catch(()=>{});
 
     // Password
