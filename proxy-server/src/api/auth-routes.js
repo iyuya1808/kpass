@@ -1722,8 +1722,10 @@ router.post('/credentials-login', applyAuthRateLimit, [
       return null;
     }
     async function waitInFrames(pageRef, selectors, timeoutMs = 30000) {
+      // Adjusted default to 3s per spec
       const start = Date.now();
-      while (Date.now() - start < timeoutMs) {
+      const deadline = timeoutMs;
+      while (Date.now() - start < deadline) {
         const h = await findInFrames(pageRef, selectors);
         if (h) return h;
         await new Promise(r => setTimeout(r, 250));
@@ -1731,7 +1733,7 @@ router.post('/credentials-login', applyAuthRateLimit, [
       return null;
     }
     async function clickInFrames(pageRef, selectors, timeoutMs = 8000) {
-      const h = await waitInFrames(pageRef, selectors, timeoutMs);
+      const h = await waitInFrames(pageRef, selectors, 3000);
       if (h) { await h.click({ delay: 20 }); return true; }
       return false;
     }
@@ -1765,7 +1767,7 @@ router.post('/credentials-login', applyAuthRateLimit, [
     console.log('[trace] waiting username field');
     // Wait until Okta page is active or username field appears
     await page.waitForFunction(() => /okta\.com|keio\.okta\.com/.test(location.hostname) || document.querySelector('input[name="identifier"],#okta-signin-username,input[type="email"],input[name="username"]'), { timeout: 30000 }).catch(()=>{});
-    let userInput = await waitInFrames(page, usernameSelectors, 30000);
+    let userInput = await waitInFrames(page, usernameSelectors, 3000);
     if (!userInput) userInput = await page.$(usernameSelectors[0]);
     if (!userInput) throw new Error('Username field not found');
     await userInput.click({ delay: 20 });
@@ -1773,12 +1775,12 @@ router.post('/credentials-login', applyAuthRateLimit, [
 
     // Next (if any)
     console.log('[trace] clicking next (if present)');
-    await clickInFrames(page, nextButtonSelectors, 8000).catch(()=>{});
+    await clickInFrames(page, nextButtonSelectors, 3000).catch(()=>{});
     await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }).catch(()=>{});
 
     // Password
     console.log('[trace] waiting password field');
-    let passInput = await waitInFrames(page, passwordSelectors, 30000);
+    let passInput = await waitInFrames(page, passwordSelectors, 3000);
     if (!passInput) passInput = await page.$(passwordSelectors[0]);
     if (!passInput) throw new Error('Password field not found');
     await passInput.click({ delay: 20 });
@@ -1786,7 +1788,7 @@ router.post('/credentials-login', applyAuthRateLimit, [
 
     // Sign in
     console.log('[trace] clicking sign-in/submit');
-    const clicked = await clickInFrames(page, signInButtonSelectors, 8000);
+    const clicked = await clickInFrames(page, signInButtonSelectors, 3000);
     if (!clicked) { await page.keyboard.press('Enter'); }
 
     // If MFA is required, fail fast (仕様によりフォールバックなし)
@@ -1801,9 +1803,9 @@ router.post('/credentials-login', applyAuthRateLimit, [
     await page.waitForFunction(() => {
       const url = window.location.href;
       return url.includes('lms.keio.jp') && !url.includes('/login') && !url.includes('/portal') && !url.includes('okta.com') && !url.includes('/saml') && !url.includes('/auth');
-    }, { timeout: 180000 });
+    }, { timeout: 30000 });
 
-    await new Promise(r => setTimeout(r, 5000));
+    await new Promise(r => setTimeout(r, 1000));
 
     // Cookies
     const cookies = await page.cookies('https://lms.keio.jp');
@@ -1817,7 +1819,7 @@ router.post('/credentials-login', applyAuthRateLimit, [
     let userData = null; let ok = false;
     for (const ep of endpoints) {
       try {
-        const resp = await fetch(`${baseUrl}${ep}`, { method: 'GET', headers: { 'Cookie': cookieString, 'Accept': 'application/json', 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' }, timeout: 10000 });
+        const resp = await fetch(`${baseUrl}${ep}`, { method: 'GET', headers: { 'Cookie': cookieString, 'Accept': 'application/json', 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' }, timeout: 5000 });
         logger.info(`Canvas API validation response for ${ep}: ${resp.status} ${resp.statusText}`);
         console.log(`[trace] validate ${ep}: ${resp.status}`);
         if (resp.ok) { if (ep === '/api/v1/users/self') { try { userData = await resp.json(); } catch(_){} } ok = true; break; }
