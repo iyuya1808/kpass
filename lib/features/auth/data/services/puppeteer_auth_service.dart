@@ -262,13 +262,47 @@ class PuppeteerAuthService {
       unawaited(poll());
 
       // Send credentials request while polling is active
+      if (kDebugMode && EnvironmentConfig.enableLogging) {
+        debugPrint('PuppeteerAuthService: Sending credentials login request');
+        debugPrint(
+          'PuppeteerAuthService: Username: ${username.substring(0, 3)}***',
+        );
+        debugPrint('PuppeteerAuthService: Password length: ${password.length}');
+      }
+
       final result = await _apiClient.credentialsLogin(username, password);
+
+      if (kDebugMode && EnvironmentConfig.enableLogging) {
+        debugPrint(
+          'PuppeteerAuthService: Credentials login result: ${result.isSuccess}',
+        );
+        if (result.isFailure) {
+          debugPrint(
+            'PuppeteerAuthService: Failure reason: ${result.failureOrNull?.message}',
+          );
+        }
+      }
 
       if (result.isSuccess) {
         // Expect token and user in payload
         final data = result.valueOrNull ?? const <String, dynamic>{};
         final token = data['token'] as String?;
         final userMap = data['user'] as Map<String, dynamic>?;
+
+        if (kDebugMode && EnvironmentConfig.enableLogging) {
+          debugPrint('PuppeteerAuthService: Authentication successful');
+          debugPrint('PuppeteerAuthService: Token exists: ${token != null}');
+          debugPrint(
+            'PuppeteerAuthService: Token length: ${token?.length ?? 0}',
+          );
+          debugPrint(
+            'PuppeteerAuthService: User data exists: ${userMap != null}',
+          );
+          debugPrint(
+            'PuppeteerAuthService: User data keys: ${userMap?.keys.toList() ?? []}',
+          );
+        }
+
         if (token == null || userMap == null) {
           pollStop.value = true;
           return const AuthResult.failure(
@@ -276,7 +310,23 @@ class PuppeteerAuthService {
             errorMessage: 'Invalid success payload: missing token/user',
           );
         }
+        if (kDebugMode && EnvironmentConfig.enableLogging) {
+          debugPrint('PuppeteerAuthService: Storing proxy auth token...');
+        }
+
         final store = await _secureStorage.storeProxyAuthToken(token);
+
+        if (kDebugMode && EnvironmentConfig.enableLogging) {
+          debugPrint(
+            'PuppeteerAuthService: Token storage result: ${store.isSuccess}',
+          );
+          if (store.isFailure) {
+            debugPrint(
+              'PuppeteerAuthService: Token storage error: ${store.failureOrNull?.message}',
+            );
+          }
+        }
+
         if (store.isFailure) {
           pollStop.value = true;
           if (kDebugMode) {
@@ -294,7 +344,23 @@ class PuppeteerAuthService {
           );
         }
 
+        if (kDebugMode && EnvironmentConfig.enableLogging) {
+          debugPrint('PuppeteerAuthService: Storing user data...');
+        }
+
         final userStore = await _secureStorage.storeUserData(userMap);
+
+        if (kDebugMode && EnvironmentConfig.enableLogging) {
+          debugPrint(
+            'PuppeteerAuthService: User data storage result: ${userStore.isSuccess}',
+          );
+          if (userStore.isFailure) {
+            debugPrint(
+              'PuppeteerAuthService: User data storage error: ${userStore.failureOrNull?.message}',
+            );
+          }
+        }
+
         if (userStore.isFailure) {
           if (kDebugMode) {
             debugPrint(
