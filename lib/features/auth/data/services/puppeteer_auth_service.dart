@@ -279,12 +279,35 @@ class PuppeteerAuthService {
         final store = await _secureStorage.storeProxyAuthToken(token);
         if (store.isFailure) {
           pollStop.value = true;
+          if (kDebugMode) {
+            debugPrint(
+              'PuppeteerAuthService: Failed to store token: ${store.failureOrNull?.message}',
+            );
+            if (defaultTargetPlatform == TargetPlatform.macOS) {
+              debugPrint('PuppeteerAuthService: macOS token storage failed');
+            }
+          }
           return AuthResult.failure(
             type: AuthResultType.unknown,
-            errorMessage: 'Failed to store token',
+            errorMessage:
+                'Failed to store token: ${store.failureOrNull?.message}',
           );
         }
-        await _secureStorage.storeUserData(userMap);
+
+        final userStore = await _secureStorage.storeUserData(userMap);
+        if (userStore.isFailure) {
+          if (kDebugMode) {
+            debugPrint(
+              'PuppeteerAuthService: Failed to store user data: ${userStore.failureOrNull?.message}',
+            );
+            if (defaultTargetPlatform == TargetPlatform.macOS) {
+              debugPrint(
+                'PuppeteerAuthService: macOS user data storage failed',
+              );
+            }
+          }
+          // ユーザーデータの保存失敗は致命的ではないので続行
+        }
         final user = UserModel.fromCanvasJson(userMap).toEntity();
         pollStop.value = true;
         return AuthResult.success(user: user, token: token);
@@ -323,6 +346,49 @@ class PuppeteerAuthService {
                   errorMessage: r.failureOrNull?.message ?? 'Proxy unreachable',
                 ),
       );
+
+  /// Test API access with a simple request
+  Future<AuthResult> testApiAccess() async {
+    try {
+      if (kDebugMode && EnvironmentConfig.enableVerboseLogging) {
+        debugPrint('PuppeteerAuthService: Testing API access');
+      }
+
+      // macOS診断を実行
+      if (defaultTargetPlatform == TargetPlatform.macOS) {
+        await _apiClient.diagnoseMacOSNetwork();
+      }
+
+      // 簡単なAPIテストリクエスト（ユーザー情報の取得）
+      final response = await _apiClient.get('/users/self');
+
+      if (response.isSuccess) {
+        if (kDebugMode && EnvironmentConfig.enableLogging) {
+          debugPrint('PuppeteerAuthService: API test successful');
+        }
+        return const AuthResult.success(user: null, token: null);
+      } else {
+        final failure = response.failureOrNull;
+        if (kDebugMode && EnvironmentConfig.enableLogging) {
+          debugPrint(
+            'PuppeteerAuthService: API test failed: ${failure?.message}',
+          );
+        }
+        return AuthResult.failure(
+          type: AuthResultType.apiValidationFailed,
+          errorMessage: failure?.message ?? 'API access test failed',
+        );
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('PuppeteerAuthService: API test exception: $e');
+      }
+      return AuthResult.failure(
+        type: AuthResultType.apiValidationFailed,
+        errorMessage: 'API access test failed: $e',
+      );
+    }
+  }
 
   void dispose() {}
 }
