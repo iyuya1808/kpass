@@ -371,6 +371,8 @@ router.post('/complete-external-browser-login', applyAuthRateLimit, [
             loginMethod: 'external_browser',
             userInfo: userData
           });
+          // Start keep-alive pings
+          startSessionKeepAlive(req.app, userId);
 
           // Generate JWT token
           const token = generateToken({ userId, username });
@@ -698,6 +700,8 @@ router.post('/complete-webview-login', applyAuthRateLimit, [
           loginMethod: 'webview',
           userInfo: userData
         });
+        // Start keep-alive pings
+        startSessionKeepAlive(req.app, userId);
 
         // Generate JWT token
         const token = generateToken({ userId, username });
@@ -798,6 +802,8 @@ router.post('/complete-manual-login', applyAuthRateLimit, [
           username: username,
           loginMethod: 'manual'
         });
+        // Start keep-alive pings
+        startSessionKeepAlive(req.app, userId);
 
         // Generate JWT token
         const token = generateToken({ userId, username });
@@ -973,6 +979,8 @@ router.post('/logout', async (req, res) => {
     
     // Remove session
     sessionManager.removeSession(userId);
+    // Stop keep-alive timer
+    stopSessionKeepAlive(req.app, userId);
     
     logger.info('Logout successful', { userId });
     
@@ -1199,6 +1207,63 @@ const ensurePuppeteerMap = (app) => {
   return app.locals.activePuppeteerLogins;
 };
 
+// Keep-Alive timers for sessions: Map<userId, NodeJS.Timeout>
+const ensureKeepAliveMap = (app) => {
+  app.locals.sessionKeepAliveTimers = app.locals.sessionKeepAliveTimers || new Map();
+  return app.locals.sessionKeepAliveTimers;
+};
+
+function stopSessionKeepAlive(app, userId) {
+  const timers = ensureKeepAliveMap(app);
+  const t = timers.get(userId);
+  if (t) {
+    try { clearInterval(t); } catch (_) {}
+    timers.delete(userId);
+    logger.info(`Stopped keep-alive for user ${userId}`);
+  }
+}
+
+function startSessionKeepAlive(app, userId) {
+  const timers = ensureKeepAliveMap(app);
+  if (timers.has(userId)) return; // avoid duplicate
+
+  const intervalMs = 10 * 60 * 1000; // 10 minutes
+  const baseUrl = process.env.CANVAS_BASE_URL || 'https://lms.keio.jp';
+
+  const tick = async () => {
+    try {
+      const session = sessionManager.getSession(userId);
+      if (!session) {
+        stopSessionKeepAlive(app, userId);
+        return;
+      }
+      const cookieString = Array.isArray(session.cookies)
+        ? session.cookies.map(c => `${c.name}=${c.value}`).join('; ')
+        : session.cookies;
+
+      const resp = await fetch(`${baseUrl}/api/v1/users/self`, {
+        method: 'GET',
+        headers: {
+          'Cookie': cookieString,
+          'Accept': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+        },
+        timeout: 10000
+      });
+      logger.info(`Keep-alive ping for ${userId}: ${resp.status} ${resp.statusText}`);
+      if (resp.status === 401 || resp.status === 403) {
+        stopSessionKeepAlive(app, userId);
+      }
+    } catch (e) {
+      logger.warn(`Keep-alive error for ${userId}: ${e.message}`);
+    }
+  };
+
+  const t = setInterval(tick, intervalMs);
+  timers.set(userId, t);
+  logger.info(`Started keep-alive (every ${intervalMs} ms) for user ${userId}`);
+}
+
 // Add: Helper to kick off background login flow
 async function startBackgroundPuppeteerLogin({ app, sessionId, userId, username }) {
   const activePuppeteerLogins = ensurePuppeteerMap(app);
@@ -1328,6 +1393,8 @@ async function startBackgroundPuppeteerLogin({ app, sessionId, userId, username 
       loginMethod: 'puppeteer',
       userInfo: userData || undefined
     });
+    // Start keep-alive pings
+    startSessionKeepAlive(app, userId);
 
     // Issue JWT token for client to reference session
     const token = generateToken({ userId, username });
@@ -1865,6 +1932,8 @@ router.post('/credentials-login', applyAuthRateLimit, [
 
     // Session & token
     sessionManager.addSession(userId, { cookies: cookieString, username, loginMethod: 'credentials', userInfo: userData || undefined });
+    // Start keep-alive pings
+    startSessionKeepAlive(req.app, userId);
     const token = generateToken({ userId, username });
 
     // Cleanup & zeroize
